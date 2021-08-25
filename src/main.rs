@@ -64,14 +64,14 @@ struct State {
     swap_chain: wgpu::SwapChain,
     size: winit::dpi::PhysicalSize<u32>,
     clear_color: wgpu::Color,
-    render_pipelines: Vec<wgpu::RenderPipeline>,
-    render_pipeline_current: usize,
+    render_pipeline:wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     num_vertices: u32,
     index_buffer: wgpu::Buffer,
     num_indices: u32,
-    diffuse_bind_group: wgpu::BindGroup,
-    diffuse_texture: texture::Texture,
+    diffuse_textures: Vec<texture::Texture>,
+    diffuse_bindgroups: Vec<wgpu::BindGroup>,
+    diffuse_bindgroup_current: usize,
 }
 
 impl State {
@@ -110,8 +110,11 @@ impl State {
         };
         let swap_chain = device.create_swap_chain(&surface, &sc_desc);
 
-        let diffuse_bytes = include_bytes!("../resources/happy-tree.png"); // CHANGED!
-        let diffuse_texture = texture::Texture::from_bytes(&device, &queue, diffuse_bytes, "happy-tree.png").unwrap(); // CHANGED!
+        let diffuse_bytes = include_bytes!("../resources/happy-tree.png"); 
+        let diffuse_texture = texture::Texture::from_bytes(&device, &queue, diffuse_bytes, "happy-tree.png").unwrap(); 
+
+        let diffuse_bytes_dog = include_bytes!("../resources/dog.png"); 
+        let diffuse_texture_dog = texture::Texture::from_bytes(&device, &queue, diffuse_bytes_dog, "dog.png").unwrap(); 
 
 
         let texture_bind_group_layout = device.create_bind_group_layout(
@@ -145,23 +148,8 @@ impl State {
             }
         );
         
-        let diffuse_bind_group = device.create_bind_group(
-            &wgpu::BindGroupDescriptor {
-                layout: &texture_bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
-                    }
-                ],
-                label: Some("diffuse_bind_group"),
-            }
-        );
-        
+        let diffuse_bind_group = create_texture_bind_group(&device, &texture_bind_group_layout, &diffuse_texture);
+        let diffuse_bind_group_dog = create_texture_bind_group(&device, &texture_bind_group_layout, &diffuse_texture_dog);
         
 
         let clear_color = wgpu::Color {
@@ -215,14 +203,14 @@ impl State {
             swap_chain,
             size,
             clear_color,
-            render_pipelines: vec![render_pipeline_texture],
-            render_pipeline_current: 0,
+            render_pipeline: render_pipeline_texture,
             vertex_buffer,
             num_vertices,
             index_buffer,
             num_indices,
-            diffuse_bind_group,
-            diffuse_texture,
+            diffuse_textures: vec![diffuse_texture, diffuse_texture_dog],
+            diffuse_bindgroups: vec![diffuse_bind_group, diffuse_bind_group_dog],
+            diffuse_bindgroup_current: 0,
         }
     }
 
@@ -239,8 +227,7 @@ impl State {
     // Handle events, return true if want to capture that event so it does not get handled further
     fn input(&mut self, event: &WindowEvent) -> bool {
         match event {
-            WindowEvent::CursorMoved { 
-                position, 
+            WindowEvent::CursorMoved {  
                 .. 
             } => {
                 true
@@ -255,6 +242,7 @@ impl State {
                             virtual_keycode: Some(VirtualKeyCode::Space), 
                             ..
                         } => {
+                            self.diffuse_bindgroup_current = (self.diffuse_bindgroup_current + 1) % self.diffuse_bindgroups.len();
                             true
                         },
                         _ => false
@@ -296,8 +284,9 @@ impl State {
                 depth_stencil_attachment: None,
             });
 
-            render_pass.set_pipeline(&self.render_pipelines[self.render_pipeline_current]); // 2.
-            render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
+            dbg!(self.diffuse_bindgroup_current);
+            render_pass.set_pipeline(&self.render_pipeline); // 2.
+            render_pass.set_bind_group(0, &self.diffuse_bindgroups[self.diffuse_bindgroup_current], &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
             // render_pass.draw(0..self.num_vertices, 0..1); // 3.
@@ -315,6 +304,26 @@ impl State {
     }
     
     
+}
+
+fn create_texture_bind_group(device: &wgpu::Device, texture_bind_group_layout: &wgpu::BindGroupLayout, diffuse_texture: &texture::Texture) -> wgpu::BindGroup {
+    let diffuse_bind_group = device.create_bind_group(
+        &wgpu::BindGroupDescriptor {
+            layout: texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
+                }
+            ],
+            label: Some("diffuse_bind_group"),
+        }
+    );
+    diffuse_bind_group
 }
 
 
