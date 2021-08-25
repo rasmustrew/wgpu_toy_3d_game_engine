@@ -114,33 +114,33 @@ impl State {
     fn input(&mut self, event: &WindowEvent) -> bool {
         match event {
             WindowEvent::CursorMoved { 
-                device_id: _, 
                 position, 
-                modifiers: _ } => {
-                    let r = position.x / self.sc_desc.width as f64;
-                    let g = position.y / self.sc_desc.height as f64;
-                    let b = (r + g) / 2.0;
-                    self.clear_color = wgpu::Color {
-                        r,
-                        g,
-                        b,
-                        a: 1.0,
-                    };
-                    true
-                },
+                .. 
+            } => {
+                let r = position.x / self.sc_desc.width as f64;
+                let g = position.y / self.sc_desc.height as f64;
+                let b = (r + g) / 2.0;
+                self.clear_color = wgpu::Color {
+                    r,
+                    g,
+                    b,
+                    a: 1.0,
+                };
+                true
+            },
             WindowEvent::KeyboardInput { 
                 device_id: _, 
                 input, 
                 is_synthetic: _ } => {
                     match *input {
                         KeyboardInput { 
-                            scancode: _, 
                             state: ElementState::Pressed, 
                             virtual_keycode: Some(VirtualKeyCode::Space), 
-                            modifiers } => {
-                                self.render_pipeline_current = (self.render_pipeline_current + 1) % 2;
-                                true
-                            },
+                            ..
+                        } => {
+                            self.render_pipeline_current = (self.render_pipeline_current + 1) % 2;
+                            true
+                        },
                         _ => false
                     }
                     
