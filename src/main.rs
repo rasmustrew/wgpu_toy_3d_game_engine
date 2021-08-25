@@ -13,6 +13,7 @@ struct State {
     sc_desc: wgpu::SwapChainDescriptor,
     swap_chain: wgpu::SwapChain,
     size: winit::dpi::PhysicalSize<u32>,
+    clear_color: wgpu::Color,
 }
 
 impl State {
@@ -51,6 +52,13 @@ impl State {
         };
         let swap_chain = device.create_swap_chain(&surface, &sc_desc);
 
+        let clear_color = wgpu::Color {
+            r: 0.1,
+            g: 0.2,
+            b: 0.3,
+            a: 1.0,
+        };
+
         Self {
             surface,
             device,
@@ -58,6 +66,7 @@ impl State {
             sc_desc,
             swap_chain,
             size,
+            clear_color,
         }
     }
 
@@ -71,8 +80,26 @@ impl State {
         }
     }
 
+    // Handle events, return true if want to capture that event so it does not get handled further
     fn input(&mut self, event: &WindowEvent) -> bool {
-        false
+        match event {
+            WindowEvent::CursorMoved { 
+                device_id: _, 
+                position, 
+                modifiers: _ } => {
+                    let r = position.x / self.sc_desc.width as f64;
+                    let g = position.y / self.sc_desc.height as f64;
+                    let b = (r + g) / 2.0;
+                    self.clear_color = wgpu::Color {
+                        r,
+                        g,
+                        b,
+                        a: 1.0,
+                    };
+                    true
+                },
+            _ => false
+        }
     }
 
     fn update(&mut self) {
@@ -98,12 +125,7 @@ impl State {
                         view: &frame.view,
                         resolve_target: None,
                         ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color {
-                                r: 0.1,
-                                g: 0.2,
-                                b: 0.3,
-                                a: 1.0,
-                            }),
+                            load: wgpu::LoadOp::Clear(self.clear_color),
                             store: true,
                         }
                     }
