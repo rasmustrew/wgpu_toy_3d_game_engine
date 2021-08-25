@@ -5,6 +5,9 @@ use winit::{
     window::Window,
 };
 
+mod util;
+use crate::util::create_render_pipeline;
+
 
 struct State {
     surface: wgpu::Surface,
@@ -14,7 +17,8 @@ struct State {
     swap_chain: wgpu::SwapChain,
     size: winit::dpi::PhysicalSize<u32>,
     clear_color: wgpu::Color,
-    render_pipeline: wgpu::RenderPipeline,
+    render_pipelines: Vec<wgpu::RenderPipeline>,
+    render_pipeline_current: usize
 }
 
 impl State {
@@ -60,10 +64,15 @@ impl State {
             a: 1.0,
         };
 
-        let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+        let basic_shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
             flags: wgpu::ShaderFlags::all(),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("basic_shader.wgsl").into()),
+        });
+        let triangle_color_shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+            label: Some("Shader"),
+            flags: wgpu::ShaderFlags::all(),
+            source: wgpu::ShaderSource::Wgsl(include_str!("triangle_color_shader.wgsl").into()),
         });
 
         let render_pipeline_layout =
@@ -73,44 +82,8 @@ impl State {
             push_constant_ranges: &[],
         });
 
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Render Pipeline"),
-            layout: Some(&render_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: "main", // 1.
-                buffers: &[], // 2.
-            },
-            fragment: Some(wgpu::FragmentState { // 3.
-                module: &shader,
-                entry_point: "main",
-                targets: &[wgpu::ColorTargetState { // 4.
-                    format: sc_desc.format,
-                    blend: Some(wgpu::BlendState::REPLACE),
-                    write_mask: wgpu::ColorWrite::ALL,
-                }],
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList, // 1.
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw, // 2.
-                cull_mode: Some(wgpu::Face::Back),
-                // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
-                polygon_mode: wgpu::PolygonMode::Fill,
-                // Requires Features::DEPTH_CLAMPING
-                clamp_depth: false,
-                // Requires Features::CONSERVATIVE_RASTERIZATION
-                conservative: false,
-            },
-            depth_stencil: None, // 1.
-            multisample: wgpu::MultisampleState {
-                count: 1, // 2.
-                mask: !0, // 3.
-                alpha_to_coverage_enabled: false, // 4.
-            },
-        });
-        
-        
+        let render_pipeline_basic = create_render_pipeline(&device, &sc_desc, &render_pipeline_layout, basic_shader);
+        let render_pipeline_color = create_render_pipeline(&device, &sc_desc, &render_pipeline_layout, triangle_color_shader);
         
 
 
@@ -122,7 +95,8 @@ impl State {
             swap_chain,
             size,
             clear_color,
-            render_pipeline,
+            render_pipelines: vec![render_pipeline_basic, render_pipeline_color],
+            render_pipeline_current: 1,
         }
     }
 
@@ -154,6 +128,23 @@ impl State {
                     };
                     true
                 },
+            WindowEvent::KeyboardInput { 
+                device_id: _, 
+                input, 
+                is_synthetic: _ } => {
+                    match *input {
+                        KeyboardInput { 
+                            scancode: _, 
+                            state: ElementState::Pressed, 
+                            virtual_keycode: Some(VirtualKeyCode::Space), 
+                            modifiers } => {
+                                self.render_pipeline_current = (self.render_pipeline_current + 1) % 2;
+                                true
+                            },
+                        _ => false
+                    }
+                    
+            },
             _ => false
         }
     }
@@ -189,7 +180,7 @@ impl State {
                 depth_stencil_attachment: None,
             });
 
-            render_pass.set_pipeline(&self.render_pipeline); // 2.
+            render_pass.set_pipeline(&self.render_pipelines[self.render_pipeline_current]); // 2.
             render_pass.draw(0..3, 0..1); // 3.
         }
 
