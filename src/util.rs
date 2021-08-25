@@ -1,13 +1,13 @@
-use wgpu::{Device, PipelineLayout, RenderPipeline, ShaderModule, SwapChainDescriptor};
+use wgpu::{Buffer, Device, PipelineLayout, RenderPipeline, ShaderModule, SwapChainDescriptor};
 
-pub fn create_render_pipeline(device: &Device, sc_desc: &SwapChainDescriptor, render_pipeline_layout: &PipelineLayout, shader: ShaderModule) -> RenderPipeline{
+pub fn create_render_pipeline(device: &Device, sc_desc: &SwapChainDescriptor, render_pipeline_layout: &PipelineLayout, buffers: &[wgpu::VertexBufferLayout], shader: ShaderModule) -> RenderPipeline{
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("Render Pipeline"),
         layout: Some(render_pipeline_layout),
         vertex: wgpu::VertexState {
             module: &shader,
             entry_point: "main", // 1.
-            buffers: &[], // 2.
+            buffers: buffers, // 2.
         },
         fragment: Some(wgpu::FragmentState { // 3.
             module: &shader,

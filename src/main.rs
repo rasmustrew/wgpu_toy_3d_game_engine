@@ -4,10 +4,45 @@ use winit::{
     window::WindowBuilder,
     window::Window,
 };
+use wgpu::util::DeviceExt;
 
 mod util;
 use crate::util::create_render_pipeline;
 
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct Vertex {
+    position: [f32; 3],
+    color: [f32; 3],
+}
+
+impl Vertex {
+    fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::InputStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x3,
+                }
+            ]
+        }
+    }
+}
+
+
+const VERTICES: &[Vertex] = &[
+    Vertex { position: [0.0, 0.5, 0.0], color: [1.0, 0.0, 0.0] },
+    Vertex { position: [-0.5, -0.5, 0.0], color: [0.0, 1.0, 0.0] },
+    Vertex { position: [0.5, -0.5, 0.0], color: [0.0, 0.0, 1.0] },
+];
 
 struct State {
     surface: wgpu::Surface,
@@ -18,7 +53,9 @@ struct State {
     size: winit::dpi::PhysicalSize<u32>,
     clear_color: wgpu::Color,
     render_pipelines: Vec<wgpu::RenderPipeline>,
-    render_pipeline_current: usize
+    render_pipeline_current: usize,
+    vertex_buffer: wgpu::Buffer,
+    num_vertices: u32,
 }
 
 impl State {
@@ -74,6 +111,11 @@ impl State {
             flags: wgpu::ShaderFlags::all(),
             source: wgpu::ShaderSource::Wgsl(include_str!("triangle_color_shader.wgsl").into()),
         });
+        let vertex_buffer_shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+            label: Some("Shader"),
+            flags: wgpu::ShaderFlags::all(),
+            source: wgpu::ShaderSource::Wgsl(include_str!("vertex_buffer_shader.wgsl").into()),
+        });
 
         let render_pipeline_layout =
         device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -82,9 +124,19 @@ impl State {
             push_constant_ranges: &[],
         });
 
-        let render_pipeline_basic = create_render_pipeline(&device, &sc_desc, &render_pipeline_layout, basic_shader);
-        let render_pipeline_color = create_render_pipeline(&device, &sc_desc, &render_pipeline_layout, triangle_color_shader);
+        let render_pipeline_basic = create_render_pipeline(&device, &sc_desc, &render_pipeline_layout, &[], basic_shader);
+        let render_pipeline_color = create_render_pipeline(&device, &sc_desc, &render_pipeline_layout, &[], triangle_color_shader);
+        let render_pipeline_vertex_buffer = create_render_pipeline(&device, &sc_desc, &render_pipeline_layout, &[Vertex::desc()], vertex_buffer_shader);
         
+        
+        let vertex_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
+            contents: bytemuck::cast_slice(VERTICES),
+            usage: wgpu::BufferUsage::VERTEX,
+        });
+
+        let num_vertices = VERTICES.len() as u32;
 
 
         Self {
@@ -95,8 +147,10 @@ impl State {
             swap_chain,
             size,
             clear_color,
-            render_pipelines: vec![render_pipeline_basic, render_pipeline_color],
-            render_pipeline_current: 1,
+            render_pipelines: vec![render_pipeline_basic, render_pipeline_color, render_pipeline_vertex_buffer],
+            render_pipeline_current: 2,
+            vertex_buffer,
+            num_vertices,
         }
     }
 
@@ -138,7 +192,7 @@ impl State {
                             virtual_keycode: Some(VirtualKeyCode::Space), 
                             ..
                         } => {
-                            self.render_pipeline_current = (self.render_pipeline_current + 1) % 2;
+                            self.render_pipeline_current = (self.render_pipeline_current + 1) % self.render_pipelines.len();
                             true
                         },
                         _ => false
@@ -181,7 +235,8 @@ impl State {
             });
 
             render_pass.set_pipeline(&self.render_pipelines[self.render_pipeline_current]); // 2.
-            render_pass.draw(0..3, 0..1); // 3.
+            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            render_pass.draw(0..self.num_vertices, 0..1); // 3.
         }
 
         
