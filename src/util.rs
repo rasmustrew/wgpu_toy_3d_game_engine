@@ -1,4 +1,4 @@
-use wgpu::{Buffer, Device, PipelineLayout, RenderPipeline, ShaderModule, SwapChainDescriptor};
+use wgpu::{Device, PipelineLayout, RenderPipeline, ShaderModule, SwapChainDescriptor};
 
 pub fn create_render_pipeline(device: &Device, sc_desc: &SwapChainDescriptor, render_pipeline_layout: &PipelineLayout, buffers: &[wgpu::VertexBufferLayout], shader: ShaderModule) -> RenderPipeline{
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
