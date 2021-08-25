@@ -171,21 +171,6 @@ impl State {
             a: 1.0,
         };
 
-        let basic_shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
-            label: Some("Shader"),
-            flags: wgpu::ShaderFlags::all(),
-            source: wgpu::ShaderSource::Wgsl(include_str!("basic_shader.wgsl").into()),
-        });
-        let triangle_color_shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
-            label: Some("Shader"),
-            flags: wgpu::ShaderFlags::all(),
-            source: wgpu::ShaderSource::Wgsl(include_str!("triangle_color_shader.wgsl").into()),
-        });
-        let vertex_buffer_shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
-            label: Some("Shader"),
-            flags: wgpu::ShaderFlags::all(),
-            source: wgpu::ShaderSource::Wgsl(include_str!("vertex_buffer_shader.wgsl").into()),
-        });
 
         let texture_shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
@@ -200,9 +185,7 @@ impl State {
             push_constant_ranges: &[],
         });
 
-        let render_pipeline_basic = create_render_pipeline(&device, &sc_desc, &render_pipeline_layout, &[], basic_shader);
-        let render_pipeline_color = create_render_pipeline(&device, &sc_desc, &render_pipeline_layout, &[], triangle_color_shader);
-        let render_pipeline_vertex_buffer = create_render_pipeline(&device, &sc_desc, &render_pipeline_layout, &[Vertex::desc()], vertex_buffer_shader);
+        
         let render_pipeline_texture = create_render_pipeline(&device, &sc_desc, &render_pipeline_layout, &[Vertex::desc()], texture_shader);
         
         let vertex_buffer = device.create_buffer_init(
@@ -232,8 +215,8 @@ impl State {
             swap_chain,
             size,
             clear_color,
-            render_pipelines: vec![render_pipeline_basic, render_pipeline_color, render_pipeline_vertex_buffer, render_pipeline_texture],
-            render_pipeline_current: 3,
+            render_pipelines: vec![render_pipeline_texture],
+            render_pipeline_current: 0,
             vertex_buffer,
             num_vertices,
             index_buffer,
@@ -260,15 +243,6 @@ impl State {
                 position, 
                 .. 
             } => {
-                let r = position.x / self.sc_desc.width as f64;
-                let g = position.y / self.sc_desc.height as f64;
-                let b = (r + g) / 2.0;
-                self.clear_color = wgpu::Color {
-                    r,
-                    g,
-                    b,
-                    a: 1.0,
-                };
                 true
             },
             WindowEvent::KeyboardInput { 
@@ -281,7 +255,6 @@ impl State {
                             virtual_keycode: Some(VirtualKeyCode::Space), 
                             ..
                         } => {
-                            self.render_pipeline_current = (self.render_pipeline_current + 1) % self.render_pipelines.len();
                             true
                         },
                         _ => false
