@@ -70,8 +70,7 @@ struct State {
     index_buffer: wgpu::Buffer,
     num_indices: u32,
     diffuse_textures: Vec<texture::Texture>,
-    diffuse_bindgroups: Vec<wgpu::BindGroup>,
-    diffuse_bindgroup_current: usize,
+    diffuse_bind_group: wgpu::BindGroup,
 }
 
 impl State {
@@ -113,8 +112,6 @@ impl State {
         let diffuse_bytes = include_bytes!("../resources/happy-tree.png"); 
         let diffuse_texture = texture::Texture::from_bytes(&device, &queue, diffuse_bytes, "happy-tree.png").unwrap(); 
 
-        let diffuse_bytes_dog = include_bytes!("../resources/dog.png"); 
-        let diffuse_texture_dog = texture::Texture::from_bytes(&device, &queue, diffuse_bytes_dog, "dog.png").unwrap(); 
 
 
         let texture_bind_group_layout = device.create_bind_group_layout(
@@ -149,7 +146,6 @@ impl State {
         );
         
         let diffuse_bind_group = create_texture_bind_group(&device, &texture_bind_group_layout, &diffuse_texture);
-        let diffuse_bind_group_dog = create_texture_bind_group(&device, &texture_bind_group_layout, &diffuse_texture_dog);
         
 
         let clear_color = wgpu::Color {
@@ -208,9 +204,8 @@ impl State {
             num_vertices,
             index_buffer,
             num_indices,
-            diffuse_textures: vec![diffuse_texture, diffuse_texture_dog],
-            diffuse_bindgroups: vec![diffuse_bind_group, diffuse_bind_group_dog],
-            diffuse_bindgroup_current: 0,
+            diffuse_textures: vec![diffuse_texture],
+            diffuse_bind_group,
         }
     }
 
@@ -242,7 +237,6 @@ impl State {
                             virtual_keycode: Some(VirtualKeyCode::Space), 
                             ..
                         } => {
-                            self.diffuse_bindgroup_current = (self.diffuse_bindgroup_current + 1) % self.diffuse_bindgroups.len();
                             true
                         },
                         _ => false
@@ -284,9 +278,8 @@ impl State {
                 depth_stencil_attachment: None,
             });
 
-            dbg!(self.diffuse_bindgroup_current);
             render_pass.set_pipeline(&self.render_pipeline); // 2.
-            render_pass.set_bind_group(0, &self.diffuse_bindgroups[self.diffuse_bindgroup_current], &[]);
+            render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
             // render_pass.draw(0..self.num_vertices, 0..1); // 3.
