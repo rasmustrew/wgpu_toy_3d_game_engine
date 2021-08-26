@@ -1,22 +1,24 @@
-use cgmath::{Deg, Vector3};
+use cgmath::{Deg, InnerSpace, Rotation3, Vector3, Zero};
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
     window::Window,
 };
-use wgpu::util::DeviceExt;
+use wgpu::{util::DeviceExt};
 
 mod util;
 mod texture;
 mod camera;
 mod uniforms;
 mod vertex;
-use crate::util::{create_render_pipeline, create_texture_bind_group};
+mod instance;
+use crate::{instance::InstanceRaw, util::{create_render_pipeline, create_texture_bind_group}};
 use crate::camera::Camera;
 use crate::camera::CameraController;
 use crate::uniforms::Uniforms;
 use crate::vertex::Vertex;
+use crate::instance::Instance;
 
 
 const VERTICES: &[Vertex] = &[
@@ -33,6 +35,10 @@ const INDICES: &[u16] = &[
     2, 3, 4,
     /* padding */ 0,
 ];
+
+const NUM_INSTANCES_PER_ROW: u32 = 10;
+const NUM_INSTANCES: u32 = NUM_INSTANCES_PER_ROW * NUM_INSTANCES_PER_ROW;
+const INSTANCE_DISPLACEMENT: cgmath::Vector3<f32> = cgmath::Vector3::new(NUM_INSTANCES_PER_ROW as f32 * 0.5, 0.0, NUM_INSTANCES_PER_ROW as f32 * 0.5);
 
 struct State {
     surface: wgpu::Surface,
@@ -54,6 +60,8 @@ struct State {
     camera_controller: CameraController,
     uniform_buffer: wgpu::Buffer,
     uniform_bind_group: wgpu::BindGroup,
+    instances: Vec<Instance>,
+    instance_buffer: wgpu::Buffer,
 }
 
 impl State {
@@ -188,7 +196,7 @@ impl State {
         let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
             flags: wgpu::ShaderFlags::all(),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/uniform_buffer_shader.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/uniform_buffer_instances_shader.wgsl").into()),
         });
         let render_pipeline_layout =
         device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -196,7 +204,7 @@ impl State {
             bind_group_layouts: &[&diffuse_bind_group_layout, &uniform_bind_group_layout],
             push_constant_ranges: &[],
         });
-        let render_pipeline = create_render_pipeline(&device, &sc_desc, &render_pipeline_layout, &[Vertex::desc()], shader);
+        let render_pipeline = create_render_pipeline(&device, &sc_desc, &render_pipeline_layout, &[Vertex::desc(), InstanceRaw::desc()], shader);
         
         let vertex_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
@@ -214,6 +222,34 @@ impl State {
             }
         );
         let num_indices = INDICES.len() as u32;  
+
+
+        let instances = (0..NUM_INSTANCES_PER_ROW).flat_map(|z| {
+            (0..NUM_INSTANCES_PER_ROW).map(move |x| {
+                let position = cgmath::Vector3 { x: x as f32, y: 0.0, z: z as f32 } - INSTANCE_DISPLACEMENT;
+
+                let rotation = if position.is_zero() {
+                    // this is needed so an object at (0, 0, 0) won't get scaled to zero
+                    // as Quaternions can effect scale if they're not created correctly
+                    cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_z(), cgmath::Deg(0.0))
+                } else {
+                    cgmath::Quaternion::from_axis_angle(position.normalize(), cgmath::Deg(45.0))
+                };
+
+                Instance {
+                    position, rotation,
+                }
+            })
+        }).collect::<Vec<_>>();
+
+        let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
+        let instance_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Instance Buffer"),
+                contents: bytemuck::cast_slice(&instance_data),
+                usage: wgpu::BufferUsage::VERTEX,
+            }
+        );
 
         Self {
             surface,
@@ -235,6 +271,8 @@ impl State {
             camera_controller,
             uniform_bind_group,
             uniform_buffer,
+            instances,
+            instance_buffer,
         }
     }
 
@@ -290,9 +328,10 @@ impl State {
             render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
             render_pass.set_bind_group(1, &self.uniform_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
             // render_pass.draw(0..self.num_vertices, 0..1); // 3.
-            render_pass.draw_indexed(0..self.num_indices, 0, 0..1); // 2.
+            render_pass.draw_indexed(0..self.num_indices, 0, 0..self.instances.len() as _); // 2.
         }
 
         
