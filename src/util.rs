@@ -1,5 +1,7 @@
 use wgpu::{Device, PipelineLayout, RenderPipeline, ShaderModule, SwapChainDescriptor};
 
+use crate::texture;
+
 pub fn create_render_pipeline(device: &Device, sc_desc: &SwapChainDescriptor, render_pipeline_layout: &PipelineLayout, buffers: &[wgpu::VertexBufferLayout], shader: ShaderModule) -> RenderPipeline{
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("Render Pipeline"),
@@ -37,4 +39,23 @@ pub fn create_render_pipeline(device: &Device, sc_desc: &SwapChainDescriptor, re
             alpha_to_coverage_enabled: false, // 4.
         },
     })
+}
+
+pub fn create_texture_bind_group(device: &wgpu::Device, texture_bind_group_layout: &wgpu::BindGroupLayout, diffuse_texture: &texture::Texture) -> wgpu::BindGroup {
+    device.create_bind_group(
+        &wgpu::BindGroupDescriptor {
+            layout: texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
+                }
+            ],
+            label: Some("diffuse_bind_group"),
+        }
+    )
 }
