@@ -12,13 +12,11 @@ mod texture;
 mod camera;
 mod uniforms;
 mod vertex;
-mod model;
 use crate::util::{create_render_pipeline, create_texture_bind_group};
 use crate::camera::Camera;
 use crate::camera::CameraController;
 use crate::uniforms::Uniforms;
 use crate::vertex::Vertex;
-use crate::model::Model;
 
 
 const VERTICES: &[Vertex] = &[
@@ -56,7 +54,6 @@ struct State {
     camera_controller: CameraController,
     uniform_buffer: wgpu::Buffer,
     uniform_bind_group: wgpu::BindGroup,
-    model: Model,
 }
 
 impl State {
@@ -144,20 +141,9 @@ impl State {
         };
         let camera_controller = CameraController::new(0.2);
 
-        let model = Model::new(
-            Vector3 {
-                x: 0.0,
-                y: 0.0,
-                z: 0.0,
-            },
-            Deg(45.0),
-            Deg(45.0),
-            Deg(45.0),
-        );
 
         let mut uniforms = Uniforms::new();
         uniforms.update_view_proj(&camera);
-        uniforms.update_model(&model);
         let uniform_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Uniform Buffer"),
@@ -202,7 +188,7 @@ impl State {
         let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
             flags: wgpu::ShaderFlags::all(),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/uniform_buffer_model_shader.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/uniform_buffer_shader.wgsl").into()),
         });
         let render_pipeline_layout =
         device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -249,7 +235,6 @@ impl State {
             camera_controller,
             uniform_bind_group,
             uniform_buffer,
-            model,
         }
     }
 
@@ -269,10 +254,8 @@ impl State {
     }
 
     fn update(&mut self) {
-        self.model.rotate_z_extrinsic(Deg(1.0));
         self.camera_controller.update_camera(&mut self.camera);
         self.uniforms.update_view_proj(&self.camera);
-        self.uniforms.update_model(&self.model);
         self.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[self.uniforms]));
     }
 
