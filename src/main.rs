@@ -1,4 +1,4 @@
-use cgmath::{Deg, InnerSpace, Rotation3, Vector3, Zero};
+use cgmath::{Deg, InnerSpace, Quaternion, Rotation3, Vector3, Zero};
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
@@ -247,7 +247,7 @@ impl State {
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Instance Buffer"),
                 contents: bytemuck::cast_slice(&instance_data),
-                usage: wgpu::BufferUsage::VERTEX,
+                usage: wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST,
             }
         );
 
@@ -295,6 +295,14 @@ impl State {
         self.camera_controller.update_camera(&mut self.camera);
         self.uniforms.update_view_proj(&self.camera);
         self.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[self.uniforms]));
+
+        self.instances.iter_mut().for_each(|instance|{
+            let rotate_by = Quaternion::from_angle_z(Deg(1.0 as f32));
+            instance.rotation = instance.rotation * rotate_by;
+        });
+        
+        let instance_data = self.instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
+        self.queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&instance_data))
     }
 
     fn render(&mut self) -> Result<(), wgpu::SwapChainError> {
