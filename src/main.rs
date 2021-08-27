@@ -55,6 +55,7 @@ struct State {
     num_indices: u32,
     diffuse_textures: Vec<texture::Texture>,
     diffuse_bind_group: wgpu::BindGroup,
+    depth_texture: texture::Texture,
     camera: Camera,
     uniforms: Uniforms,
     camera_controller: CameraController,
@@ -134,6 +135,9 @@ impl State {
         );
         let diffuse_bind_group = create_texture_bind_group(&device, &diffuse_bind_group_layout, &diffuse_texture);
         
+        let depth_texture = texture::Texture::create_depth_texture(&device, &sc_desc, "depth_texture");
+
+
         let camera = Camera {
             // position the camera one unit up and 2 units back
             // +z is out of the screen
@@ -193,6 +197,8 @@ impl State {
             a: 1.0,
         };
 
+        
+
         let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
             flags: wgpu::ShaderFlags::all(),
@@ -204,6 +210,7 @@ impl State {
             bind_group_layouts: &[&diffuse_bind_group_layout, &uniform_bind_group_layout],
             push_constant_ranges: &[],
         });
+        
         let render_pipeline = create_render_pipeline(&device, &sc_desc, &render_pipeline_layout, &[Vertex::desc(), InstanceRaw::desc()], shader);
         
         let vertex_buffer = device.create_buffer_init(
@@ -224,7 +231,7 @@ impl State {
         let num_indices = INDICES.len() as u32;  
 
 
-        let instances = (0..NUM_INSTANCES_PER_ROW).flat_map(|z| {
+        let mut instances = (0..NUM_INSTANCES_PER_ROW).flat_map(|z| {
             (0..NUM_INSTANCES_PER_ROW).map(move |x| {
                 let position = cgmath::Vector3 { x: x as f32, y: 0.0, z: z as f32 } - INSTANCE_DISPLACEMENT;
 
@@ -241,6 +248,9 @@ impl State {
                 }
             })
         }).collect::<Vec<_>>();
+        // Reversed to demonstrate what happens when the objects are not sorted in depth order. 
+        // Thus necessitating use of a depth buffer. 
+        instances.reverse();
 
         let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
         let instance_buffer = device.create_buffer_init(
@@ -266,6 +276,7 @@ impl State {
             num_indices,
             diffuse_textures: vec![diffuse_texture],
             diffuse_bind_group,
+            depth_texture,
             camera,
             uniforms,
             camera_controller,
@@ -283,6 +294,7 @@ impl State {
             self.sc_desc.width = new_size.width;
             self.sc_desc.height = new_size.height;
             self.swap_chain = self.device.create_swap_chain(&self.surface, &self.sc_desc);
+            self.depth_texture = texture::Texture::create_depth_texture(&self.device, &self.sc_desc, "depth_texture");
         }
     }
 
@@ -329,7 +341,14 @@ impl State {
                         }
                     }
                 ],
-                depth_stencil_attachment: None,
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_texture.view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: true,
+                    }),
+                    stencil_ops: None,
+                }),
             });
 
             render_pass.set_pipeline(&self.render_pipeline); // 2.
