@@ -32,13 +32,7 @@ pub fn create_render_pipeline(device: &Device, sc_desc: &SwapChainDescriptor, re
             // Requires Features::CONSERVATIVE_RASTERIZATION
             conservative: false,
         },
-        depth_stencil: Some(wgpu::DepthStencilState {
-            format: texture::Texture::DEPTH_FORMAT,
-            depth_write_enabled: true,
-            depth_compare: wgpu::CompareFunction::Less, // 1.
-            stencil: wgpu::StencilState::default(), // 2.
-            bias: wgpu::DepthBiasState::default(),
-        }),
+        depth_stencil: None,
         multisample: wgpu::MultisampleState {
             count: 1, // 2.
             mask: !0, // 3.

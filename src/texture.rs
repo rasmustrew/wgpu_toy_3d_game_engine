@@ -91,7 +91,8 @@ impl Texture {
             dimension: wgpu::TextureDimension::D2,
             format: Self::DEPTH_FORMAT,
             usage: wgpu::TextureUsage::RENDER_ATTACHMENT // 3.
-                | wgpu::TextureUsage::SAMPLED,
+                | wgpu::TextureUsage::SAMPLED
+                | wgpu::TextureUsage::COPY_DST,
         };
         let texture = device.create_texture(&desc);
 

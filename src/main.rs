@@ -56,6 +56,7 @@ struct State {
     diffuse_textures: Vec<texture::Texture>,
     diffuse_bind_group: wgpu::BindGroup,
     depth_texture: texture::Texture,
+    depth_bind_group: wgpu::BindGroup,
     camera: Camera,
     uniforms: Uniforms,
     camera_controller: CameraController,
@@ -136,6 +137,37 @@ impl State {
         let diffuse_bind_group = create_texture_bind_group(&device, &diffuse_bind_group_layout, &diffuse_texture);
         
         let depth_texture = texture::Texture::create_depth_texture(&device, &sc_desc, "depth_texture");
+        let depth_bind_group_layout = device.create_bind_group_layout(
+            &wgpu::BindGroupLayoutDescriptor {
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStage::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Depth,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStage::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler {
+                            // This is only for TextureSampleType::Depth
+                            comparison: true,
+                            // This should be true if the sample_type of the texture is:
+                            //     TextureSampleType::Float { filterable: true }
+                            // Otherwise you'll get an error.
+                            filtering: true,
+                        },
+                        count: None,
+                    },
+                ],
+                label: Some("depth_bind_group_layout"),
+            }
+        );
+        let depth_bind_group = create_texture_bind_group(&device, &depth_bind_group_layout, &depth_texture);
 
 
         let camera = Camera {
@@ -202,12 +234,12 @@ impl State {
         let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
             flags: wgpu::ShaderFlags::all(),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/uniform_buffer_instances_shader.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/uniform_buffer_instances_depth_shader.wgsl").into()),
         });
         let render_pipeline_layout =
         device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Render Pipeline Layout"),
-            bind_group_layouts: &[&diffuse_bind_group_layout, &uniform_bind_group_layout],
+            bind_group_layouts: &[&diffuse_bind_group_layout, &uniform_bind_group_layout, &depth_bind_group_layout],
             push_constant_ranges: &[],
         });
         
@@ -277,6 +309,7 @@ impl State {
             diffuse_textures: vec![diffuse_texture],
             diffuse_bind_group,
             depth_texture,
+            depth_bind_group,
             camera,
             uniforms,
             camera_controller,
@@ -341,19 +374,13 @@ impl State {
                         }
                     }
                 ],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_texture.view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: true,
-                    }),
-                    stencil_ops: None,
-                }),
+                depth_stencil_attachment: None,
             });
 
             render_pass.set_pipeline(&self.render_pipeline); // 2.
             render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
             render_pass.set_bind_group(1, &self.uniform_bind_group, &[]);
+            render_pass.set_bind_group(2, &self.depth_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
