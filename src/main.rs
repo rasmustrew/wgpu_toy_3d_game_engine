@@ -198,7 +198,7 @@ impl State {
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStage::VERTEX,
+                    visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -238,7 +238,7 @@ impl State {
             let shader = wgpu::ShaderModuleDescriptor {
                 label: Some("Normal Shader"),
                 flags: wgpu::ShaderFlags::all(),
-                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/uniform_buffer_instances_light_normal_shader.wgsl").into()),
+                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/uniform_buffer_instances_diffuse_specular_shader.wgsl").into()),
             };
             create_render_pipeline(
                 &device,
