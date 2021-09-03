@@ -24,6 +24,17 @@ impl Texture {
         Self::from_image(device, queue, &img, label, is_normal_map)
     }
 
+    pub fn from_bytes(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        bytes: &[u8], 
+        label: &str,
+        is_normal_map: bool,
+    ) -> Result<Self> {
+        let img = image::load_from_memory(bytes)?;
+        Self::from_image(device, queue, &img, Some(label), is_normal_map)
+    }
+
     pub fn from_image(
         device: &wgpu::Device,
         queue: &wgpu::Queue,

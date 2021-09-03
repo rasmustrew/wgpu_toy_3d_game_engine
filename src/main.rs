@@ -56,6 +56,7 @@ struct State {
     light_bind_group_layout: wgpu::BindGroupLayout,
     light_bind_group: wgpu::BindGroup,
     light_render_pipeline: wgpu::RenderPipeline,
+    debug_material: crate::model::Material,
 }
 
 impl State {
@@ -334,6 +335,16 @@ impl State {
         ).unwrap();
 
 
+        let debug_material = {
+            let diffuse_bytes = include_bytes!("../resources/cobble-diffuse.png");
+            let normal_bytes = include_bytes!("../resources/cobble-normal.png");
+        
+            let diffuse_texture = texture::Texture::from_bytes(&device, &queue, diffuse_bytes, "resources/alt-diffuse.png", false).unwrap();
+            let normal_texture = texture::Texture::from_bytes(&device, &queue, normal_bytes, "resources/alt-normal.png", true).unwrap();
+            
+            model::Material::new(&device, "alt-material", diffuse_texture, normal_texture, &texture_bind_group_layout)
+        };
+
 
         Self {
             surface,
@@ -358,6 +369,8 @@ impl State {
             light_bind_group_layout,
             light_bind_group,
             light_render_pipeline,
+            #[allow(dead_code)]
+            debug_material,
         }
     }
 
@@ -449,6 +462,15 @@ impl State {
                 &self.uniform_bind_group,
                 &self.light_bind_group,
             );
+
+            //debug
+            // render_pass.draw_model_instanced_with_material(
+            //     &self.obj_model,
+            //     &self.debug_material,
+            //     0..self.instances.len() as u32,
+            //     &self.uniform_bind_group,
+            //     &self.light_bind_group,
+            // );
         }
         // Finish giving commands, and submit command buffer to queue.
         let command_buffer = encoder.finish();

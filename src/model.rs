@@ -98,44 +98,22 @@ impl Model {
         let containing_folder = path.as_ref().parent()
             .context("Directory has no parent")?;
 
-        let mut materials = Vec::new();
-        for mat in obj_materials {
-            let diffuse_path = mat.diffuse_texture;
-            let diffuse_texture = crate::texture::Texture::load(device, queue, containing_folder.join(diffuse_path), false)?;
-
-            let normal_path = mat.normal_texture;
-            let normal_texture = crate::texture::Texture::load(device, queue, containing_folder.join(normal_path), true)?;
-
-            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: wgpu::BindingResource::TextureView(&normal_texture.view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 3,
-                        resource: wgpu::BindingResource::Sampler(&normal_texture.sampler),
-                    },
-                ],
-                label: None,
-            });
-
-            materials.push(Material {
-                name: mat.name,
-                diffuse_texture,
-                normal_texture,
-                bind_group,
-            });
-        }
+            let mut materials = Vec::new();
+            for mat in obj_materials {
+                let diffuse_path = mat.diffuse_texture;
+                let diffuse_texture = crate::texture::Texture::load(device, queue, containing_folder.join(diffuse_path), false)?;
+                
+                let normal_path = mat.normal_texture;
+                let normal_texture = crate::texture::Texture::load(device, queue, containing_folder.join(normal_path), true)?;
+            
+                materials.push(Material::new(
+                    device,
+                    &mat.name,
+                    diffuse_texture,
+                    normal_texture,
+                    layout,
+                ));
+            }
 
         let mut meshes = Vec::new();
         for m in obj_models {
@@ -289,6 +267,14 @@ pub trait DrawModel<'a> {
         camera: &'a wgpu::BindGroup,
         light: &'a wgpu::BindGroup,
     );
+    fn draw_model_instanced_with_material(
+        &mut self,
+        model: &'a Model,
+        material: &'a Material,
+        instances: Range<u32>,
+        camera: &'a wgpu::BindGroup,
+        light: &'a wgpu::BindGroup,
+    );
 }
 
 impl<'a, 'b> DrawModel<'b> for wgpu::RenderPass<'a>
@@ -339,6 +325,19 @@ where
     ) {
         for mesh in &model.meshes {
             let material = &model.materials[mesh.material];
+            self.draw_mesh_instanced(mesh, material, instances.clone(), camera, light);
+        }
+    }
+
+    fn draw_model_instanced_with_material(
+        &mut self,
+        model: &'b Model,
+        material: &'b Material,
+        instances: Range<u32>,
+        camera: &'b wgpu::BindGroup,
+        light: &'b wgpu::BindGroup,
+    ) {
+        for mesh in &model.meshes {
             self.draw_mesh_instanced(mesh, material, instances.clone(), camera, light);
         }
     }
@@ -418,6 +417,46 @@ where
     ) {
         for mesh in &model.meshes {
             self.draw_light_mesh_instanced(mesh, instances.clone(), camera, light);
+        }
+    }
+}
+
+impl Material {
+    pub fn new(
+        device: &wgpu::Device,
+        name: &str, 
+        diffuse_texture: crate::texture::Texture, 
+        normal_texture: crate::texture::Texture,
+        layout: &wgpu::BindGroupLayout,
+    ) -> Self {
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&normal_texture.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::Sampler(&normal_texture.sampler),
+                },
+            ],
+            label: Some(name),
+        });
+
+        Self { 
+            name: String::from(name),
+            diffuse_texture,
+            normal_texture,
+            bind_group,
         }
     }
 }
