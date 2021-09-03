@@ -135,9 +135,10 @@ impl State {
 
 
         
-        let diffuse_bind_group_layout = device.create_bind_group_layout(
+        let texture_bind_group_layout = device.create_bind_group_layout(
             &wgpu::BindGroupLayoutDescriptor {
                 entries: &[
+                    // diffuse texture
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
                         visibility: wgpu::ShaderStage::FRAGMENT,
@@ -148,6 +149,7 @@ impl State {
                         },
                         count: None,
                     },
+                    // diffuse sampler
                     wgpu::BindGroupLayoutEntry {
                         binding: 1,
                         visibility: wgpu::ShaderStage::FRAGMENT,
@@ -158,6 +160,27 @@ impl State {
                             //     TextureSampleType::Float { filterable: true }
                             // Otherwise you'll get an error.
                             filtering: true,
+                        },
+                        count: None,
+                    },
+                    // normal map texture
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStage::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                        },
+                        count: None,
+                    },
+                    // normal map sampler
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStage::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler { 
+                            comparison: false,
+                            filtering: true, 
                         },
                         count: None,
                     },
@@ -230,7 +253,7 @@ impl State {
         let render_pipeline_layout =
         device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Render Pipeline Layout"),
-            bind_group_layouts: &[&diffuse_bind_group_layout, &uniform_bind_group_layout, &light_bind_group_layout],
+            bind_group_layouts: &[&texture_bind_group_layout, &uniform_bind_group_layout, &light_bind_group_layout],
             push_constant_ranges: &[],
         });
         
@@ -238,7 +261,7 @@ impl State {
             let shader = wgpu::ShaderModuleDescriptor {
                 label: Some("Normal Shader"),
                 flags: wgpu::ShaderFlags::all(),
-                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/uniform_buffer_instances_diffuse_specular_shader.wgsl").into()),
+                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/uniform_buffer_instances_diffuse_specular_normalmap_shader.wgsl").into()),
             };
             create_render_pipeline(
                 &device,
@@ -306,7 +329,7 @@ impl State {
         let obj_model = model::Model::load(
             &device,
             &queue,
-            &diffuse_bind_group_layout,
+            &texture_bind_group_layout,
             res_dir.join("cube.obj"),
         ).unwrap();
 
