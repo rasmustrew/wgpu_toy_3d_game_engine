@@ -1,4 +1,4 @@
-use cgmath::{Deg, InnerSpace, Quaternion, Rotation3, Vector3, Zero};
+use cgmath::{Deg, InnerSpace, Quaternion, Rotation3, Zero};
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
@@ -13,17 +13,14 @@ mod camera;
 mod uniforms;
 mod model;
 mod instance;
-use crate::{instance::InstanceRaw, model::Vertex, util::{create_render_pipeline, create_texture_bind_group}};
+use crate::{instance::InstanceRaw, model::Vertex, util::{create_render_pipeline}};
 use model::{DrawModel, Model};
 use crate::camera::Camera;
 use crate::camera::CameraController;
 use crate::uniforms::Uniforms;
 use crate::instance::Instance;
 
-
 const NUM_INSTANCES_PER_ROW: u32 = 10;
-const NUM_INSTANCES: u32 = NUM_INSTANCES_PER_ROW * NUM_INSTANCES_PER_ROW;
-const INSTANCE_DISPLACEMENT: cgmath::Vector3<f32> = cgmath::Vector3::new(NUM_INSTANCES_PER_ROW as f32 * 0.5, 0.0, NUM_INSTANCES_PER_ROW as f32 * 0.5);
 
 struct State {
     surface: wgpu::Surface,
@@ -34,8 +31,6 @@ struct State {
     size: winit::dpi::PhysicalSize<u32>,
     clear_color: wgpu::Color,
     render_pipeline:wgpu::RenderPipeline,
-    diffuse_textures: Vec<texture::Texture>,
-    diffuse_bind_group: wgpu::BindGroup,
     depth_texture: texture::Texture,
     camera: Camera,
     uniforms: Uniforms,
@@ -83,8 +78,7 @@ impl State {
         };
         let swap_chain = device.create_swap_chain(&surface, &sc_desc);
 
-        let diffuse_bytes = include_bytes!("../resources/happy-tree.png"); 
-        let diffuse_texture = texture::Texture::from_bytes(&device, &queue, diffuse_bytes, "happy-tree.png").unwrap(); 
+        
         let diffuse_bind_group_layout = device.create_bind_group_layout(
             &wgpu::BindGroupLayoutDescriptor {
                 entries: &[
@@ -115,7 +109,6 @@ impl State {
                 label: Some("texture_bind_group_layout"),
             }
         );
-        let diffuse_bind_group = create_texture_bind_group(&device, &diffuse_bind_group_layout, &diffuse_texture);
         
         let depth_texture = texture::Texture::create_depth_texture(&device, &sc_desc, "depth_texture");
 
@@ -171,7 +164,6 @@ impl State {
             label: Some("uniform_bind_group"),
         });
 
-
         let clear_color = wgpu::Color {
             r: 0.1,
             g: 0.2,
@@ -179,12 +171,12 @@ impl State {
             a: 1.0,
         };
 
-
         let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
             flags: wgpu::ShaderFlags::all(),
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/uniform_buffer_instances_shader.wgsl").into()),
         });
+
         let render_pipeline_layout =
         device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Render Pipeline Layout"),
@@ -234,6 +226,7 @@ impl State {
         ).unwrap();
 
 
+
         Self {
             surface,
             device,
@@ -243,8 +236,6 @@ impl State {
             size,
             clear_color,
             render_pipeline,
-            diffuse_textures: vec![diffuse_texture],
-            diffuse_bind_group,
             depth_texture,
             camera,
             uniforms,
