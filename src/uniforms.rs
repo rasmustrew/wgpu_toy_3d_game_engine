@@ -1,6 +1,6 @@
 use cgmath::SquareMatrix;
 
-use crate::{camera::{Camera, OPENGL_TO_WGPU_MATRIX}};
+use crate::{camera::{self, Camera, OPENGL_TO_WGPU_MATRIX}};
 
 // We need this for Rust to store our data correctly for the shaders
 #[repr(C)]
@@ -21,10 +21,9 @@ impl Uniforms {
         }
     }
 
-    pub fn update_view_proj(&mut self, camera: &Camera) {
-        // We're using Vector4 because of the uniforms 16 byte spacing requirement
-        self.view_position = camera.eye.to_homogeneous().into();
-        self.view_proj = (OPENGL_TO_WGPU_MATRIX * camera.build_view_projection_matrix()).into();
+    pub fn update_view_proj(&mut self, camera: &camera::Camera, projection: &camera::Projection) {
+        self.view_position = camera.position.to_homogeneous().into();
+        self.view_proj = (projection.calc_matrix() * camera.calc_matrix()).into();
     }
 
 }

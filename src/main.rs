@@ -1,3 +1,4 @@
+use camera::Projection;
 use cgmath::{Deg, InnerSpace, Quaternion, Rotation3, Zero};
 use winit::{
     event::*,
@@ -46,6 +47,8 @@ struct State {
     camera: Camera,
     uniforms: Uniforms,
     camera_controller: CameraController,
+    projection: Projection,
+    mouse_pressed: bool,
     uniform_buffer: wgpu::Buffer,
     uniform_bind_group: wgpu::BindGroup,
     instances: Vec<Instance>,
@@ -193,24 +196,13 @@ impl State {
         let depth_texture = texture::Texture::create_depth_texture(&device, &sc_desc, "depth_texture");
 
 
-        let camera = Camera {
-            // position the camera one unit up and 2 units back
-            // +z is out of the screen
-            eye: (0.0, 1.0, 2.0).into(),
-            // have it look at the origin
-            target: (0.0, 0.0, 0.0).into(),
-            // which way is "up"
-            up: cgmath::Vector3::unit_y(),
-            aspect: sc_desc.width as f32 / sc_desc.height as f32,
-            fovy: 45.0,
-            znear: 0.1,
-            zfar: 100.0,
-        };
-        let camera_controller = CameraController::new(0.2);
+        let camera = camera::Camera::new((0.0, 5.0, 10.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0));
+        let projection = camera::Projection::new(sc_desc.width, sc_desc.height, cgmath::Deg(45.0), 0.1, 100.0);
+        let camera_controller = camera::CameraController::new(4.0, 0.4);
 
 
         let mut uniforms = Uniforms::new();
-        uniforms.update_view_proj(&camera);
+        uniforms.update_view_proj(&camera, &projection);
         let uniform_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Uniform Buffer"),
@@ -359,6 +351,8 @@ impl State {
             camera,
             uniforms,
             camera_controller,
+            projection,
+            mouse_pressed: false,
             uniform_bind_group,
             uniform_buffer,
             instances,
@@ -382,18 +376,45 @@ impl State {
             self.sc_desc.height = new_size.height;
             self.swap_chain = self.device.create_swap_chain(&self.surface, &self.sc_desc);
             self.depth_texture = texture::Texture::create_depth_texture(&self.device, &self.sc_desc, "depth_texture");
+            self.projection.resize(new_size.width, new_size.height);
         }
     }
 
     // Handle events, return true if want to capture that event so it does not get handled further
-    fn input(&mut self, event: &WindowEvent) -> bool {
-        self.camera_controller.process_events(event)
+    fn input(&mut self, event: &DeviceEvent) -> bool {
+        match event {
+            DeviceEvent::Key(
+                KeyboardInput {
+                    virtual_keycode: Some(key),
+                    state,
+                    ..
+                }
+            ) => self.camera_controller.process_keyboard(*key, *state),
+            DeviceEvent::MouseWheel { delta, .. } => {
+                self.camera_controller.process_scroll(delta);
+                true
+            }
+            DeviceEvent::Button {
+                button: 1, // Left Mouse Button
+                state,
+            } => {
+                self.mouse_pressed = *state == ElementState::Pressed;
+                true
+            }
+            DeviceEvent::MouseMotion { delta } => {
+                if self.mouse_pressed {
+                    self.camera_controller.process_mouse(delta.0, delta.1);
+                }
+                true
+            }
+            _ => false,
+        }
     }
 
-    fn update(&mut self) {
+    fn update(&mut self, dt: std::time::Duration) {
         // Camera
-        self.camera_controller.update_camera(&mut self.camera);
-        self.uniforms.update_view_proj(&self.camera);
+        self.camera_controller.update_camera(&mut self.camera, dt);
+        self.uniforms.update_view_proj(&self.camera, &self.projection);
         self.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[self.uniforms]));
 
         // Models
@@ -407,8 +428,8 @@ impl State {
         // Light
         let old_position: cgmath::Vector3<_> = self.light_uniform.position.into();
         self.light_uniform.position =
-            (cgmath::Quaternion::from_axis_angle((0.0, 1.0, 0.0).into(), cgmath::Deg(1.0))
-                * old_position).into();
+            (cgmath::Quaternion::from_axis_angle((0.0, 1.0, 0.0).into(), cgmath::Deg(60.0 * dt.as_secs_f32()))
+            * old_position).into();
         self.queue.write_buffer(&self.light_buffer, 0, bytemuck::cast_slice(&[self.light_uniform]));
     }
 
@@ -491,12 +512,19 @@ fn main() {
     let window = WindowBuilder::new().build(&event_loop).unwrap();
 
     let mut state = pollster::block_on(State::new(&window));
+    let mut last_render_time = std::time::Instant::now();
 
     event_loop.run(move |event, _, control_flow| match event {
+        Event::DeviceEvent {
+            ref event,
+            .. // We're not using device_id currently
+        } => {
+            state.input(event);
+        }
         Event::WindowEvent {
             ref event,
             window_id,
-        } if window_id == window.id() => if !state.input(event) {
+        } if window_id == window.id() => {
             match event {
                 WindowEvent::CloseRequested
                 | WindowEvent::KeyboardInput {
@@ -512,14 +540,16 @@ fn main() {
                     state.resize(*physical_size);
                 }
                 WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
-                    // new_inner_size is &&mut so we have to dereference it twice
                     state.resize(**new_inner_size);
                 }
                 _ => {}
             }
-        },
+        }
         Event::RedrawRequested(_) => {
-            state.update();
+            let now = std::time::Instant::now();
+                let dt = now - last_render_time;
+                last_render_time = now;
+                state.update(dt);
             match state.render() {
                 Ok(_) => {}
                 // Recreate the swap_chain if lost
