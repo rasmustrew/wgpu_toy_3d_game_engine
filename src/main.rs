@@ -1,3 +1,5 @@
+use std::{rc::Rc};
+
 use camera::Projection;
 use cgmath::{Deg, InnerSpace, Quaternion, Rotation3, Zero};
 use winit::{
@@ -14,12 +16,15 @@ mod camera;
 mod uniforms;
 mod model;
 mod instance;
+mod ecs;
 use crate::{instance::InstanceRaw, model::Vertex, util::{create_render_pipeline}};
-use model::{DrawModel, Model, DrawLight};
+use model::{DrawModel, Model};
 use crate::camera::Camera;
 use crate::camera::CameraController;
 use crate::uniforms::Uniforms;
 use crate::instance::Instance;
+use crate::ecs::Component;
+use crate::ecs::Entity;
 
 const NUM_INSTANCES_PER_ROW: u32 = 10;
 
@@ -51,15 +56,14 @@ struct State {
     mouse_pressed: bool,
     uniform_buffer: wgpu::Buffer,
     uniform_bind_group: wgpu::BindGroup,
-    instances: Vec<Instance>,
-    instance_buffer: wgpu::Buffer,
-    obj_model: Model,
     light_uniform: LightUniform,
     light_buffer: wgpu::Buffer,
-    light_bind_group_layout: wgpu::BindGroupLayout,
+    _light_bind_group_layout: wgpu::BindGroupLayout,
     light_bind_group: wgpu::BindGroup,
     light_render_pipeline: wgpu::RenderPipeline,
-    debug_material: crate::model::Material,
+    _debug_material: crate::model::Material,
+    _models: Vec<Rc<Model>>,
+    entities: Vec<Entity>,
 }
 
 impl State {
@@ -136,8 +140,6 @@ impl State {
             }],
             label: None,
         });
-
-
         
         let texture_bind_group_layout = device.create_bind_group_layout(
             &wgpu::BindGroupLayoutDescriptor {
@@ -308,16 +310,6 @@ impl State {
             })
         }).collect::<Vec<_>>();
 
-
-        let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
-        let instance_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Instance Buffer"),
-                contents: bytemuck::cast_slice(&instance_data),
-                usage: wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST,
-            }
-        );
-
         let res_dir = std::path::Path::new(env!("OUT_DIR")).join("resources");
         let obj_model = model::Model::load(
             &device,
@@ -326,6 +318,21 @@ impl State {
             res_dir.join("cube.obj"),
         ).unwrap();
 
+        let model = Rc::new(obj_model);
+
+        let entities = instances.into_iter().map(|instance: Instance| -> Entity {
+            let component_model = Component::Model(model.clone());
+            let instance_data = instance.to_raw();
+            let instance_buffer = device.create_buffer_init(
+                &wgpu::util::BufferInitDescriptor {
+                    label: Some("Instance Buffer"),
+                    contents: bytemuck::cast_slice(&[instance_data]),
+                    usage: wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST,
+                }
+            );
+            let component_instances = Component::Instance(instance, instance_buffer);
+            Entity::new(vec![component_model, component_instances])
+        }).collect::<Vec<_>>();
 
         let debug_material = {
             let diffuse_bytes = include_bytes!("../resources/cobble-diffuse.png");
@@ -336,7 +343,6 @@ impl State {
             
             model::Material::new(&device, "alt-material", diffuse_texture, normal_texture, &texture_bind_group_layout)
         };
-
 
         Self {
             surface,
@@ -355,16 +361,15 @@ impl State {
             mouse_pressed: false,
             uniform_bind_group,
             uniform_buffer,
-            instances,
-            instance_buffer,
-            obj_model,
             light_uniform,
             light_buffer,
-            light_bind_group_layout,
+            _light_bind_group_layout: light_bind_group_layout,
             light_bind_group,
             light_render_pipeline,
             #[allow(dead_code)]
-            debug_material,
+            _debug_material: debug_material,
+            _models: vec!(model),
+            entities,
         }
     }
 
@@ -418,12 +423,32 @@ impl State {
         self.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[self.uniforms]));
 
         // Models
-        self.instances.iter_mut().for_each(|instance|{
-            let rotate_by = Quaternion::from_angle_z(Deg(1.0 as f32));
-            instance.rotation = instance.rotation * rotate_by;
+        let rotate_by = Quaternion::from_angle_z(Deg(1.0 as f32));
+        self.entities.iter_mut().for_each(|entity|{
+            entity.get_components_mut().iter_mut().for_each(|component| {
+                match component {
+                    Component::Model(_) => (),
+                    Component::Instance(instance, _) => {
+                        instance.rotation = instance.rotation * rotate_by;
+                        
+                        
+                    },
+                }
+            }); 
         });
-        let instance_data = self.instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
-        self.queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&instance_data));
+
+        self.entities.iter().for_each(|entity|{
+            entity.get_components().iter().for_each(|component| {
+                match component {
+                    Component::Model(_) => (),
+                    Component::Instance(instance, buffer) => {
+                        let instance_data = instance.to_raw();
+                        self.queue.write_buffer(buffer, 0, bytemuck::cast_slice(&[instance_data]));
+                    },
+                }
+            }); 
+        });
+
 
         // Light
         let old_position: cgmath::Vector3<_> = self.light_uniform.position.into();
@@ -443,6 +468,27 @@ impl State {
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Render Encoder"),
         });
+
+
+        let renderables = self.entities.iter().filter_map(|entity| -> Option<(&Rc<Model>, &Instance, &wgpu::Buffer)> {
+            let model = entity.get_components().iter().find_map(|component| match component {
+                Component::Model(model) => Some(model),
+                Component::Instance(_, _) => None,
+            });
+            let instance = entity.get_components().iter().find_map(|component| match component {
+                Component::Model(_) => None,
+                Component::Instance(instance, buffer) => Some((instance, buffer)),
+            });
+            
+            if let Some((instance, buffer)) = instance {
+                if let Some(model) = model {
+                    return Some((model, instance, buffer))
+                }
+            }
+            None
+            
+        }).collect::<Vec<_>>();
+
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -467,22 +513,28 @@ impl State {
                 }),
             });
 
-            render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+            
 
             render_pass.set_pipeline(&self.light_render_pipeline); // NEW!
-            render_pass.draw_light_model(
-                &self.obj_model,
-                &self.uniform_bind_group,
-                &self.light_bind_group,
-            );
+            // render_pass.draw_light_model(
+            //     &self.obj_model,
+            //     &self.uniform_bind_group,
+            //     &self.light_bind_group,
+            // );
 
             render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.draw_model_instanced(
-                &self.obj_model,
-                0..self.instances.len() as u32,
-                &self.uniform_bind_group,
-                &self.light_bind_group,
-            );
+            
+            
+            for (model, _, instance_buffer) in renderables {
+                render_pass.set_vertex_buffer(1, instance_buffer.slice(..));
+                render_pass.draw_model(model, &self.uniform_bind_group,  &self.light_bind_group)
+            }
+            // render_pass.draw_model_instanced(6
+            //     &self.obj_model,
+            //     0..self.instances.len() as u32,
+            //     &self.uniform_bind_group,
+            //     &self.light_bind_group,
+            // );
 
             //debug
             // render_pass.draw_model_instanced_with_material(
@@ -493,6 +545,7 @@ impl State {
             //     &self.light_bind_group,
             // );
         }
+
         // Finish giving commands, and submit command buffer to queue.
         let command_buffer = encoder.finish();
         self.queue.submit(std::iter::once(command_buffer));

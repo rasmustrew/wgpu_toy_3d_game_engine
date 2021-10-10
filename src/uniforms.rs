@@ -1,6 +1,6 @@
 use cgmath::SquareMatrix;
 
-use crate::{camera::{self, Camera, OPENGL_TO_WGPU_MATRIX}};
+use crate::{camera::{self}};
 
 // We need this for Rust to store our data correctly for the shaders
 #[repr(C)]
