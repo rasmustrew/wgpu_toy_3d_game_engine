@@ -311,17 +311,44 @@ impl State {
         }).collect::<Vec<_>>();
 
         let res_dir = std::path::Path::new(env!("OUT_DIR")).join("resources");
-        let obj_model = model::Model::load(
+        let cube_model = model::Model::load(
             &device,
             &queue,
             &texture_bind_group_layout,
             res_dir.join("cube.obj"),
         ).unwrap();
 
-        let model = Rc::new(obj_model);
+        let floor_model = model::Model::load(
+            &device,
+            &queue,
+            &texture_bind_group_layout,
+            res_dir.join("floor.obj"),
+        ).unwrap();
 
-        let entities = instances.into_iter().map(|instance: Instance| -> Entity {
-            let component_model = Component::Model(model.clone());
+        
+        let floor_model = Rc::new(floor_model);
+        let floor_entity = {
+            let component_model = Component::Model(floor_model.clone());
+            let instance = Instance {
+                position: cgmath::Vector3 { x: 0.0, y: 0.0, z: 0.0 }, 
+                rotation: cgmath::Quaternion::zero(),
+            };
+            let instance_data = instance.to_raw();
+            let instance_buffer = device.create_buffer_init(
+                &wgpu::util::BufferInitDescriptor {
+                    label: Some("Instance Buffer"),
+                    contents: bytemuck::cast_slice(&[instance_data]),
+                    usage: wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST,
+                }
+            );
+            let component_instances = Component::Instance(instance, instance_buffer);
+            Entity::new(vec![component_model, component_instances]) 
+        };
+
+        let cube_model = Rc::new(cube_model);
+
+        let mut entities = instances.into_iter().map(|instance: Instance| -> Entity {
+            let component_model = Component::Model(cube_model.clone());
             let instance_data = instance.to_raw();
             let instance_buffer = device.create_buffer_init(
                 &wgpu::util::BufferInitDescriptor {
@@ -333,6 +360,8 @@ impl State {
             let component_instances = Component::Instance(instance, instance_buffer);
             Entity::new(vec![component_model, component_instances])
         }).collect::<Vec<_>>();
+
+        entities.push(floor_entity);
 
         let debug_material = {
             let diffuse_bytes = include_bytes!("../resources/cobble-diffuse.png");
@@ -368,7 +397,7 @@ impl State {
             light_render_pipeline,
             #[allow(dead_code)]
             _debug_material: debug_material,
-            _models: vec!(model),
+            _models: vec!(cube_model, floor_model),
             entities,
         }
     }
