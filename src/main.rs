@@ -331,7 +331,8 @@ impl State {
             let component_model = Component::Model(floor_model.clone());
             let instance = Instance {
                 position: cgmath::Vector3 { x: 0.0, y: 0.0, z: 0.0 }, 
-                rotation: cgmath::Quaternion::zero(),
+                // rotation: cgmath::Quaternion::from_angle_x(cgmath::Deg(1.0)),
+                rotation: cgmath::Quaternion::new(1.0, 0.0, 0.0, 0.0),
             };
             let instance_data = instance.to_raw();
             let instance_buffer = device.create_buffer_init(
@@ -458,9 +459,7 @@ impl State {
                 match component {
                     Component::Model(_) => (),
                     Component::Instance(instance, _) => {
-                        instance.rotation = instance.rotation * rotate_by;
-                        
-                        
+                        instance.rotation = rotate_by * instance.rotation;
                     },
                 }
             }); 
