@@ -72,7 +72,7 @@ impl State {
 
         // The instance is a handle to our GPU
         // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
-        let instance = wgpu::Instance::new(wgpu::Backends::VULKAN);
+        let instance = wgpu::Instance::new(wgpu::Backends::all());
         let surface = unsafe { instance.create_surface(window) };
 
         // Adapter is like PhysicalDevice in Vulkan
@@ -195,11 +195,11 @@ impl State {
             }
         );
         
-        let depth_texture = texture::Texture::create_depth_texture(&device, &sc_desc, "depth_texture");
+        let depth_texture = texture::Texture::create_depth_texture(&device, &surface_config, "depth_texture");
 
 
         let camera = camera::Camera::new((0.0, 5.0, 10.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0));
-        let projection = camera::Projection::new(sc_desc.width, sc_desc.height, cgmath::Deg(45.0), 0.1, 100.0);
+        let projection = camera::Projection::new(surface_config.width, surface_config.height, cgmath::Deg(45.0), 0.1, 100.0);
         let camera_controller = camera::CameraController::new(4.0, 0.4);
 
 
@@ -336,7 +336,7 @@ impl State {
                 &wgpu::util::BufferInitDescriptor {
                     label: Some("Instance Buffer"),
                     contents: bytemuck::cast_slice(&[instance_data]),
-                    usage: wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST,
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 }
             );
             let component_instances = Component::Instance(instance, instance_buffer);
@@ -352,7 +352,7 @@ impl State {
                 &wgpu::util::BufferInitDescriptor {
                     label: Some("Instance Buffer"),
                     contents: bytemuck::cast_slice(&[instance_data]),
-                    usage: wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST,
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 }
             );
             let component_instances = Component::Instance(instance, instance_buffer);
@@ -373,10 +373,9 @@ impl State {
 
         Self {
             surface,
+            surface_config,
             device,
             queue,
-            sc_desc,
-            swap_chain,
             size,
             clear_color,
             render_pipeline,
@@ -407,7 +406,7 @@ impl State {
             self.surface_config.width = new_size.width;
             self.surface_config.height = new_size.height;
             self.surface.configure(&self.device, &self.surface_config);
-            self.depth_texture = texture::Texture::create_depth_texture(&self.device, &self.sc_desc, "depth_texture");
+            self.depth_texture = texture::Texture::create_depth_texture(&self.device, &self.surface_config, "depth_texture");
             self.projection.resize(new_size.width, new_size.height);
         }
     }
@@ -629,9 +628,9 @@ fn main() {
             match state.render() {
                 Ok(_) => {}
                 // Recreate the swap_chain if lost
-                Err(wgpu::SwapChainError::Lost) => state.resize(state.size),
+                Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
                 // The system is out of memory, we should probably quit
-                Err(wgpu::SwapChainError::OutOfMemory) => *control_flow = ControlFlow::Exit,
+                Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
                 // All other errors (Outdated, Timeout) should be resolved by the next frame
                 Err(e) => eprintln!("{:?}", e),
             }
