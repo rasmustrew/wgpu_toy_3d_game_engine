@@ -8,7 +8,7 @@ use winit::{
     window::WindowBuilder,
     window::Window,
 };
-use wgpu::{util::DeviceExt};
+use wgpu::{util::DeviceExt, SurfaceConfiguration};
 
 mod util;
 mod texture;
@@ -41,10 +41,9 @@ struct LightUniform {
 
 struct State {
     surface: wgpu::Surface,
+    surface_config: SurfaceConfiguration,
     device: wgpu::Device,
     queue: wgpu::Queue,
-    sc_desc: wgpu::SwapChainDescriptor,
-    swap_chain: wgpu::SwapChain,
     size: winit::dpi::PhysicalSize<u32>,
     clear_color: wgpu::Color,
     render_pipeline:wgpu::RenderPipeline,
@@ -73,7 +72,7 @@ impl State {
 
         // The instance is a handle to our GPU
         // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
-        let instance = wgpu::Instance::new(wgpu::BackendBit::PRIMARY);
+        let instance = wgpu::Instance::new(wgpu::Backends::VULKAN);
         let surface = unsafe { instance.create_surface(window) };
 
         // Adapter is like PhysicalDevice in Vulkan
@@ -81,6 +80,7 @@ impl State {
             &wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::default(),
                 compatible_surface: Some(&surface),
+                force_fallback_adapter: false,
             },
         ).await.unwrap();
 
@@ -93,14 +93,14 @@ impl State {
             None,
         ).await.unwrap();
 
-        let sc_desc = wgpu::SwapChainDescriptor {
-            usage: wgpu::TextureUsage::RENDER_ATTACHMENT, //used for rendering to the screen
-            format: adapter.get_swap_chain_preferred_format(&surface).unwrap(), // best for rendering to screen
+        let surface_config = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            format: surface.get_preferred_format(&adapter).unwrap(),
             width: size.width,
             height: size.height,
             present_mode: wgpu::PresentMode::Fifo,
         };
-        let swap_chain = device.create_swap_chain(&surface, &sc_desc);
+        surface.configure(&device, &surface_config);
 
         let light_uniform = LightUniform {
             position: [2.0, 2.0, 2.0],
@@ -113,7 +113,7 @@ impl State {
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Light VB"),
                 contents: bytemuck::cast_slice(&[light_uniform]),
-                usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             }
         );
 
@@ -121,7 +121,7 @@ impl State {
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -147,7 +147,7 @@ impl State {
                     // diffuse texture
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
-                        visibility: wgpu::ShaderStage::FRAGMENT,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Texture {
                             multisampled: false,
                             view_dimension: wgpu::TextureViewDimension::D2,
@@ -158,7 +158,7 @@ impl State {
                     // diffuse sampler
                     wgpu::BindGroupLayoutEntry {
                         binding: 1,
-                        visibility: wgpu::ShaderStage::FRAGMENT,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Sampler {
                             // This is only for TextureSampleType::Depth
                             comparison: false,
@@ -172,7 +172,7 @@ impl State {
                     // normal map texture
                     wgpu::BindGroupLayoutEntry {
                         binding: 2,
-                        visibility: wgpu::ShaderStage::FRAGMENT,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Texture {
                             multisampled: false,
                             sample_type: wgpu::TextureSampleType::Float { filterable: true },
@@ -183,7 +183,7 @@ impl State {
                     // normal map sampler
                     wgpu::BindGroupLayoutEntry {
                         binding: 3,
-                        visibility: wgpu::ShaderStage::FRAGMENT,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Sampler { 
                             comparison: false,
                             filtering: true, 
@@ -209,14 +209,14 @@ impl State {
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Uniform Buffer"),
                 contents: bytemuck::cast_slice(&[uniforms]),
-                usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             }
         );
         let uniform_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -255,13 +255,12 @@ impl State {
         let render_pipeline = {
             let shader = wgpu::ShaderModuleDescriptor {
                 label: Some("Normal Shader"),
-                flags: wgpu::ShaderFlags::all(),
                 source: wgpu::ShaderSource::Wgsl(include_str!("shaders/uniform_buffer_instances_diffuse_specular_normalmap_shader.wgsl").into()),
             };
             create_render_pipeline(
                 &device,
                 &render_pipeline_layout,
-                sc_desc.format,
+                surface_config.format,
                 Some(texture::Texture::DEPTH_FORMAT),
                 &[model::ModelVertex::desc(), InstanceRaw::desc()],
                 shader,
@@ -276,13 +275,12 @@ impl State {
             });
             let shader = wgpu::ShaderModuleDescriptor {
                 label: Some("Light Shader"),
-                flags: wgpu::ShaderFlags::all(),
                 source: wgpu::ShaderSource::Wgsl(include_str!("shaders/draw_light_box.wgsl").into()),
             };
             create_render_pipeline(
                 &device,
                 &layout,
-                sc_desc.format,
+                surface_config.format,
                 Some(texture::Texture::DEPTH_FORMAT),
                 &[model::ModelVertex::desc()],
                 shader,
@@ -331,7 +329,6 @@ impl State {
             let component_model = Component::Model(floor_model.clone());
             let instance = Instance {
                 position: cgmath::Vector3 { x: 0.0, y: 0.0, z: 0.0 }, 
-                // rotation: cgmath::Quaternion::from_angle_x(cgmath::Deg(1.0)),
                 rotation: cgmath::Quaternion::new(1.0, 0.0, 0.0, 0.0),
             };
             let instance_data = instance.to_raw();
@@ -407,9 +404,9 @@ impl State {
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {
             self.size = new_size;
-            self.sc_desc.width = new_size.width;
-            self.sc_desc.height = new_size.height;
-            self.swap_chain = self.device.create_swap_chain(&self.surface, &self.sc_desc);
+            self.surface_config.width = new_size.width;
+            self.surface_config.height = new_size.height;
+            self.surface.configure(&self.device, &self.surface_config);
             self.depth_texture = texture::Texture::create_depth_texture(&self.device, &self.sc_desc, "depth_texture");
             self.projection.resize(new_size.width, new_size.height);
         }
@@ -486,11 +483,9 @@ impl State {
         self.queue.write_buffer(&self.light_buffer, 0, bytemuck::cast_slice(&[self.light_uniform]));
     }
 
-    fn render(&mut self) -> Result<(), wgpu::SwapChainError> {
-        let frame = self
-            .swap_chain
-            .get_current_frame()?
-            .output;
+    fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+        let output = self.surface.get_current_texture()?;
+        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
         
         //command buffer
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -523,7 +518,7 @@ impl State {
                 label: Some("Render Pass"),
                 color_attachments: &[
                     wgpu::RenderPassColorAttachment {
-                        view: &frame.view,
+                        view: &view,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(self.clear_color),
@@ -577,7 +572,7 @@ impl State {
         // Finish giving commands, and submit command buffer to queue.
         let command_buffer = encoder.finish();
         self.queue.submit(std::iter::once(command_buffer));
-    
+        output.present();
         Ok(())
     }
     
