@@ -1,4 +1,4 @@
-use anyhow::*;
+use anyhow::{Context, Result};
 use cgmath::InnerSpace;
 use std::{ops::Range, path::Path};
 use wgpu::{util::DeviceExt};
@@ -81,6 +81,7 @@ impl Vertex for ModelVertex {
 
 
 impl Model {
+    #[allow(clippy::too_many_lines)]
     pub fn load<P: AsRef<Path>>(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -90,12 +91,10 @@ impl Model {
         let (obj_models, obj_materials) = tobj::load_obj(path.as_ref(), &LoadOptions {
                 triangulate: true,
                 single_index: true,
-                ..Default::default()
+                ..tobj::LoadOptions::default()
             },
         )?;
-
         let obj_materials = obj_materials?;
-
         // We're assuming that the texture files are stored with the obj file
         let containing_folder = path.as_ref().parent()
             .context("Directory has no parent")?;
@@ -134,8 +133,8 @@ impl Model {
                         m.mesh.normals[i * 3 + 1],
                         m.mesh.normals[i * 3 + 2],
                     ],
-                    tangent: [0.0; 3].into(),
-                    bitangent: [0.0; 3].into(),
+                    tangent: [0.0; 3],
+                    bitangent: [0.0; 3],
                 });
             }
 

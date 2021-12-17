@@ -1,5 +1,5 @@
 use image::GenericImageView;
-use anyhow::*;
+use anyhow::Result;
 use std::path::Path;
 #[derive(Debug)]
 pub struct Texture {
@@ -22,7 +22,7 @@ impl Texture {
         let label = path_copy.to_str();
         
         let img = image::open(path)?;
-        Self::from_image(device, queue, &img, label, is_normal_map)
+        Ok(Self::from_image(device, queue, &img, label, is_normal_map))
     }
 
     pub fn from_bytes(
@@ -33,7 +33,7 @@ impl Texture {
         is_normal_map: bool,
     ) -> Result<Self> {
         let img = image::load_from_memory(bytes)?;
-        Self::from_image(device, queue, &img, Some(label), is_normal_map)
+        Ok(Self::from_image(device, queue, &img, Some(label), is_normal_map))
     }
 
     pub fn from_image(
@@ -42,7 +42,7 @@ impl Texture {
         img: &image::DynamicImage,
         label: Option<&str>,
         is_normal_map: bool,
-    ) -> Result<Self> {
+    ) -> Self {
         let rgba = img.to_rgba8(); 
         let dimensions = img.dimensions();
 
@@ -92,11 +92,11 @@ impl Texture {
                 mag_filter: wgpu::FilterMode::Linear,
                 min_filter: wgpu::FilterMode::Nearest,
                 mipmap_filter: wgpu::FilterMode::Nearest,
-                ..Default::default()
+                ..wgpu::SamplerDescriptor::default()
             }
         );
         
-        Ok(Self { texture, view, sampler })
+        Self { texture, view, sampler }
     }
 
     pub fn create_depth_texture(device: &wgpu::Device, sc_desc: &wgpu::SurfaceConfiguration, label: &str) -> Self {
@@ -126,10 +126,10 @@ impl Texture {
                 mag_filter: wgpu::FilterMode::Linear,
                 min_filter: wgpu::FilterMode::Linear,
                 mipmap_filter: wgpu::FilterMode::Nearest,
-                compare: Some(wgpu::CompareFunction::LessEqual), // 5.
-                lod_min_clamp: -100.0,
+                lod_min_clamp: -100.0, // 5.
                 lod_max_clamp: 100.0,
-                ..Default::default()
+                compare: Some(wgpu::CompareFunction::LessEqual),
+                ..wgpu::SamplerDescriptor::default()
             }
         );
 

@@ -1,9 +1,14 @@
+#![deny(clippy::all)]
+#![warn(clippy::pedantic)]
+#![warn(clippy::cargo)]
+#![warn(clippy::nursery)]
+#![allow(clippy::cast_precision_loss)]
 use std::{rc::Rc};
 
 use camera::Projection;
 use cgmath::{Deg, InnerSpace, Quaternion, Rotation3, Zero};
 use winit::{
-    event::*,
+    event::{DeviceEvent, ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
     window::Window,
@@ -17,16 +22,16 @@ mod uniforms;
 mod model;
 mod instance;
 mod ecs;
-use crate::{instance::InstanceRaw, model::Vertex, util::{create_render_pipeline}};
+use crate::{model::Vertex, util::{create_render_pipeline}};
 use model::{DrawModel, Model};
 use crate::camera::Camera;
-use crate::camera::CameraController;
 use crate::uniforms::Uniforms;
 use crate::instance::Instance;
 use crate::ecs::Component;
 use crate::ecs::Entity;
 
-const NUM_INSTANCES_PER_ROW: u32 = 10;
+const NUM_INSTANCES_PER_ROW: u16 = 10;
+const SPACE_BETWEEN: f32 = 3.0;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -50,7 +55,7 @@ struct State {
     depth_texture: texture::Texture,
     camera: Camera,
     uniforms: Uniforms,
-    camera_controller: CameraController,
+    camera_controller: camera::Controller,
     projection: Projection,
     mouse_pressed: bool,
     uniform_buffer: wgpu::Buffer,
@@ -67,6 +72,7 @@ struct State {
 
 impl State {
     // Creating some of the wgpu types requires async code
+    #[allow(clippy::too_many_lines)]
     async fn new(window: &Window) -> Self {
         let size = window.inner_size();
 
@@ -200,7 +206,7 @@ impl State {
 
         let camera = camera::Camera::new((0.0, 5.0, 10.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0));
         let projection = camera::Projection::new(surface_config.width, surface_config.height, cgmath::Deg(45.0), 0.1, 100.0);
-        let camera_controller = camera::CameraController::new(4.0, 0.4);
+        let camera_controller = camera::Controller::new(4.0, 0.4);
 
 
         let mut uniforms = Uniforms::new();
@@ -262,8 +268,8 @@ impl State {
                 &render_pipeline_layout,
                 surface_config.format,
                 Some(texture::Texture::DEPTH_FORMAT),
-                &[model::ModelVertex::desc(), InstanceRaw::desc()],
-                shader,
+                &[model::ModelVertex::desc(), instance::Raw::desc()],
+                &shader,
             )
         };
 
@@ -283,30 +289,13 @@ impl State {
                 surface_config.format,
                 Some(texture::Texture::DEPTH_FORMAT),
                 &[model::ModelVertex::desc()],
-                shader,
+                &shader,
             )
         };
         
 
-        const SPACE_BETWEEN: f32 = 3.0;
-        let instances = (0..NUM_INSTANCES_PER_ROW).flat_map(|z| {
-            (0..NUM_INSTANCES_PER_ROW).map(move |x| {
-                let x = SPACE_BETWEEN * (x as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
-                let z = SPACE_BETWEEN * (z as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
-
-                let position = cgmath::Vector3 { x, y: 0.0, z };
-
-                let rotation = if position.is_zero() {
-                    cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_z(), cgmath::Deg(0.0))
-                } else {
-                    cgmath::Quaternion::from_axis_angle(position.normalize(), cgmath::Deg(45.0))
-                };
-
-                Instance {
-                    position, rotation,
-                }
-            })
-        }).collect::<Vec<_>>();
+        
+        
 
         let res_dir = std::path::Path::new(env!("OUT_DIR")).join("resources");
         let cube_model = model::Model::load(
@@ -314,7 +303,7 @@ impl State {
             &queue,
             &texture_bind_group_layout,
             res_dir.join("cube.obj"),
-        ).unwrap();
+        ).unwrap(); 
 
         let floor_model = model::Model::load(
             &device,
@@ -345,7 +334,25 @@ impl State {
 
         let cube_model = Rc::new(cube_model);
 
-        let mut entities = instances.into_iter().map(|instance: Instance| -> Entity {
+        
+        let mut entities = (0..NUM_INSTANCES_PER_ROW).flat_map(|z| {
+            (0..NUM_INSTANCES_PER_ROW).map(move |x| {
+                let x = SPACE_BETWEEN * (f32::from(x) - f32::from(NUM_INSTANCES_PER_ROW) / 2.0);
+                let z = SPACE_BETWEEN * (f32::from(z) - f32::from(NUM_INSTANCES_PER_ROW) / 2.0);
+
+                let position = cgmath::Vector3 { x, y: 0.0, z };
+
+                let rotation = if position.is_zero() {
+                    cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_z(), cgmath::Deg(0.0))
+                } else {
+                    cgmath::Quaternion::from_axis_angle(position.normalize(), cgmath::Deg(45.0))
+                };
+
+                Instance {
+                    position, rotation,
+                }
+            })
+        }).map(|instance: Instance| -> Entity {
             let component_model = Component::Model(cube_model.clone());
             let instance_data = instance.to_raw();
             let instance_buffer = device.create_buffer_init(
@@ -394,7 +401,7 @@ impl State {
             light_render_pipeline,
             #[allow(dead_code)]
             _debug_material: debug_material,
-            _models: vec!(cube_model, floor_model),
+            _models: vec![cube_model, floor_model],
             entities,
         }
     }
@@ -449,7 +456,7 @@ impl State {
         self.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[self.uniforms]));
 
         // Models
-        let rotate_by = Quaternion::from_angle_z(Deg(1.0 as f32));
+        let rotate_by = Quaternion::from_angle_z(Deg(1.0));
         self.entities.iter_mut().for_each(|entity|{
             entity.get_components_mut().iter_mut().for_each(|component| {
                 match component {
@@ -549,7 +556,7 @@ impl State {
             
             for (model, _, instance_buffer) in renderables {
                 render_pass.set_vertex_buffer(1, instance_buffer.slice(..));
-                render_pass.draw_model(model, &self.uniform_bind_group,  &self.light_bind_group)
+                render_pass.draw_model(model, &self.uniform_bind_group,  &self.light_bind_group);
             }
             // render_pass.draw_model_instanced(6
             //     &self.obj_model,

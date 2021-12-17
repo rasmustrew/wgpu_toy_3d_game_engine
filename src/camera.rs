@@ -1,6 +1,5 @@
-use cgmath::*;
-use winit::event::*;
-use winit::dpi::PhysicalPosition;
+use cgmath::{InnerSpace, Matrix4, Point3, Rad, Vector3, perspective};
+use winit::{event::{ElementState, MouseScrollDelta, VirtualKeyCode}, dpi::PhysicalPosition};
 use std::time::Duration;
 use std::f32::consts::FRAC_PI_2;
 
@@ -75,7 +74,7 @@ impl Projection {
 }
 
 #[derive(Debug)]
-pub struct CameraController {
+pub struct Controller {
     amount_left: f32,
     amount_right: f32,
     amount_forward: f32,
@@ -89,7 +88,7 @@ pub struct CameraController {
     sensitivity: f32,
 }
 
-impl CameraController {
+impl Controller {
     pub fn new(speed: f32, sensitivity: f32) -> Self {
         Self {
             amount_left: 0.0,
@@ -137,9 +136,9 @@ impl CameraController {
         }
     }
 
-    pub fn process_mouse(&mut self, mouse_dx: f64, mouse_dy: f64) {
-        self.rotate_horizontal = mouse_dx as f32;
-        self.rotate_vertical = mouse_dy as f32;
+    pub fn process_mouse(&mut self, dx: f64, dy: f64) {
+        self.rotate_horizontal = dx as f32;
+        self.rotate_vertical = dy as f32;
     }
 
     pub fn process_scroll(&mut self, delta: &MouseScrollDelta) {
