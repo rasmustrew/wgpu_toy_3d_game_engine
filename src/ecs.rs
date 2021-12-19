@@ -2,6 +2,7 @@ use std::{rc::{Rc}};
 
 pub struct World {
     entity_counter: u64,
+    pub entities: Vec<Entity>,
 }
 
 pub struct Entity {
@@ -11,7 +12,7 @@ pub struct Entity {
 
 pub enum Component {
     Model(Rc<crate::model::Model>),
-    Instance(crate::instance::Instance, wgpu::Buffer)
+    Transform(crate::transform::Transform, wgpu::Buffer),
 }
 
 
@@ -19,15 +20,36 @@ impl World {
     pub fn new() -> Self {
         Self {
             entity_counter: 0,
+            entities: vec![],
         }
     }
 
-    pub fn create_entity (&mut self, components: Vec<Component>) -> Entity {
+    pub fn create_entity (&mut self, components: Vec<Component>) {
         self.entity_counter += 1;
-        Entity {
+        let entity = Entity {
             _id: self.entity_counter,
             components,
-        }
+        };
+        self.entities.push(entity);
     }
+
+    pub fn act_on_components<F>(&mut self, f: &mut F) where
+    F: FnMut(&mut Component) -> () {
+        self.entities.iter_mut().for_each(|entity|{
+            entity.components.iter_mut().for_each(|component| {
+                f(component)
+            }); 
+        });
+    }
+
+    pub fn do_with_components<F>(&self, f: F) where
+    F: Fn(&Component) -> () {
+        self.entities.iter().for_each(|entity|{
+            entity.components.iter().for_each(|component| {
+                f(component)
+            }); 
+        });
+    }
+
     
 }

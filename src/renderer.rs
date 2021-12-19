@@ -10,7 +10,7 @@ use winit::{
 };
 
 
-use crate::{model::{Vertex, self, DrawModel, Model}, util::{create_render_pipeline}, texture, camera::{self, Camera, Projection}, instance::{self, Instance}, ecs::{Component, Entity}};
+use crate::{model::{Vertex, self, DrawModel, Model}, util::{create_render_pipeline}, texture, camera::{self, Camera, Projection}, transform::{self, Transform}, ecs::{Component, Entity, World}};
 
 use crate::uniforms::Uniforms;
 
@@ -34,10 +34,8 @@ pub struct Renderer {
     render_pipeline:wgpu::RenderPipeline,
     depth_texture: texture::Texture,
     pub texture_bind_group_layout: wgpu::BindGroupLayout,
-
     projection: Projection,
     uniforms: Uniforms,
-
     uniform_buffer: wgpu::Buffer,
     uniform_bind_group: wgpu::BindGroup,
     light_uniform: LightUniform,
@@ -244,7 +242,7 @@ impl Renderer {
                 &render_pipeline_layout,
                 surface_config.format,
                 Some(texture::Texture::DEPTH_FORMAT),
-                &[model::ModelVertex::desc(), instance::Raw::desc()],
+                &[model::ModelVertex::desc(), transform::Raw::desc()],
                 &shader,
             )
         };
@@ -314,7 +312,7 @@ impl Renderer {
         }
     }
 
-    pub fn render(&mut self, entities: &Vec<Entity>) -> Result<(), wgpu::SurfaceError> {
+    pub fn render(&mut self, world: &World) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
         
@@ -324,19 +322,19 @@ impl Renderer {
         });
 
 
-        let renderables = entities.iter().filter_map(|entity| -> Option<(&Rc<Model>, &Instance, &wgpu::Buffer)> {
+        let renderables = world.entities.iter().filter_map(|entity| -> Option<(&Rc<Model>, &Transform, &wgpu::Buffer)> {
             let model = entity.components.iter().find_map(|component| match component {
                 Component::Model(model) => Some(model),
-                Component::Instance(_, _) => None,
+                Component::Transform(_, _) => None,
             });
             let instance = entity.components.iter().find_map(|component| match component {
                 Component::Model(_) => None,
-                Component::Instance(instance, buffer) => Some((instance, buffer)),
+                Component::Transform(instance, buffer) => Some((instance, buffer)),
             });
             
-            if let Some((instance, buffer)) = instance {
+            if let Some((transform, buffer)) = instance {
                 if let Some(model) = model {
-                    return Some((model, instance, buffer))
+                    return Some((model, transform, buffer))
                 }
             }
             None
@@ -407,21 +405,17 @@ impl Renderer {
         Ok(())
     }
 
-    pub fn update(&mut self, camera: &Camera, entities: &Vec<Entity>, dt: std::time::Duration) {
+    pub fn update(&mut self, camera: &Camera, world: &World, dt: std::time::Duration) {
         self.uniforms.update_view_proj(camera, &self.projection);
         self.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[self.uniforms]));
 
-        entities.iter().for_each(|entity|{
-            entity.components.iter().for_each(|component| {
-                match component {
-                    Component::Model(_) => (),
-                    Component::Instance(instance, buffer) => {
-                        let instance_data = instance.to_raw();
-                        self.queue.write_buffer(&buffer, 0, bytemuck::cast_slice(&[instance_data]));
-                    },
-                }
-            }); 
+        world.do_with_components(|component| {
+            if let Component::Transform(instance, buffer) = component {
+                let instance_data = instance.to_raw();
+                self.queue.write_buffer(&buffer, 0, bytemuck::cast_slice(&[instance_data]));
+            }
         });
+
 
         // Light
         // TODO: a light should not be a special thing, but rather a component?

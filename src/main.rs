@@ -14,39 +14,30 @@ use winit::{
     window::WindowBuilder,
     window::Window,
 };
-use wgpu::{util::DeviceExt, SurfaceConfiguration};
+use wgpu::{util::DeviceExt};
 
 mod util;
 mod texture;
 mod camera;
 mod uniforms;
 mod model;
-mod instance;
+mod transform;
 mod ecs;
 mod renderer;
-use crate::{model::Vertex, util::{create_render_pipeline}};
-use model::{DrawModel, Model};
+use model::{Model};
 use crate::camera::Camera;
-use crate::uniforms::Uniforms;
-use crate::instance::Instance;
+use crate::transform::Transform;
 use crate::ecs::Component;
-use crate::ecs::Entity;
 
 const NUM_INSTANCES_PER_ROW: u16 = 10;
 const SPACE_BETWEEN: f32 = 3.0;
 
-
-
-
-
 struct State {
-    
-
     mouse_pressed: bool,
     camera: Camera,
     camera_controller: camera::Controller,
     _models: Vec<Rc<Model>>,
-    entities: Vec<Entity>,
+    world: World,
     renderer: renderer::Renderer,
 }
 
@@ -57,9 +48,6 @@ impl State {
         let mut world = World::new();
         let camera = camera::Camera::new((0.0, 5.0, 10.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0));
         let camera_controller = camera::Controller::new(4.0, 0.4);
-        let size = window.inner_size();
-
-       
         let renderer = renderer::Renderer::new(window, &camera).await;
         
 
@@ -79,29 +67,28 @@ impl State {
         ).unwrap();
 
         
+        // Floor
         let floor_model = Rc::new(floor_model);
-        let floor_entity = {
-            let component_model = Component::Model(floor_model.clone());
-            let instance = Instance {
-                position: cgmath::Vector3 { x: 0.0, y: 0.0, z: 0.0 }, 
-                rotation: cgmath::Quaternion::new(1.0, 0.0, 0.0, 0.0),
-            };
-            let instance_data = instance.to_raw();
-            let instance_buffer = renderer.device.create_buffer_init(
-                &wgpu::util::BufferInitDescriptor {
-                    label: Some("Instance Buffer"),
-                    contents: bytemuck::cast_slice(&[instance_data]),
-                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                }
-            );
-            let component_instances = Component::Instance(instance, instance_buffer);
-            world.create_entity(vec![component_model, component_instances]) 
+        let component_model = Component::Model(floor_model.clone());
+        let instance = Transform {
+            position: cgmath::Vector3 { x: 0.0, y: 0.0, z: 0.0 }, 
+            rotation: cgmath::Quaternion::new(1.0, 0.0, 0.0, 0.0),
         };
+        let instance_data = instance.to_raw();
+        let instance_buffer = renderer.device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Instance Buffer"),
+                contents: bytemuck::cast_slice(&[instance_data]),
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            }
+        );
+        let component_instances = Component::Transform(instance, instance_buffer);
+        world.create_entity(vec![component_model, component_instances]); 
 
+
+        // Cubes
         let cube_model = Rc::new(cube_model);
-
-        
-        let mut entities = (0..NUM_INSTANCES_PER_ROW).flat_map(|z| {
+        (0..NUM_INSTANCES_PER_ROW).flat_map(|z| {
             (0..NUM_INSTANCES_PER_ROW).map(move |x| {
                 let x = SPACE_BETWEEN * (f32::from(x) - f32::from(NUM_INSTANCES_PER_ROW) / 2.0);
                 let z = SPACE_BETWEEN * (f32::from(z) - f32::from(NUM_INSTANCES_PER_ROW) / 2.0);
@@ -114,11 +101,11 @@ impl State {
                     cgmath::Quaternion::from_axis_angle(position.normalize(), cgmath::Deg(45.0))
                 };
 
-                Instance {
+                Transform {
                     position, rotation,
                 }
             })
-        }).map(|instance: Instance| -> Entity {
+        }).for_each(|instance: Transform| {
             let component_model = Component::Model(cube_model.clone());
             let instance_data = instance.to_raw();
             let instance_buffer = renderer.device.create_buffer_init(
@@ -128,25 +115,19 @@ impl State {
                     usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 }
             );
-            let component_instances = Component::Instance(instance, instance_buffer);
-            world.create_entity(vec![component_model, component_instances])
-        }).collect::<Vec<_>>();
-
-        entities.push(floor_entity);
-
-        
+            let component_instances = Component::Transform(instance, instance_buffer);
+            world.create_entity(vec![component_model, component_instances]);
+        });
 
         Self {
             mouse_pressed: false,
             _models: vec![cube_model, floor_model],
-            entities,
+            world,
             camera,
             camera_controller,
             renderer,
         }
     }
-
-    
 
     // Handle events, return true if want to capture that event so it does not get handled further
     fn input(&mut self, event: &DeviceEvent) -> bool {
@@ -184,19 +165,15 @@ impl State {
         self.camera_controller.update_camera(&mut self.camera, dt);
         // Models
         let rotate_by = Quaternion::from_angle_z(Deg(1.0));
-        self.entities.iter_mut().for_each(|entity|{
-            entity.components.iter_mut().for_each(|component| {
-                match component {
-                    Component::Model(_) => (),
-                    Component::Instance(instance, _) => {
-                        instance.rotation = rotate_by * instance.rotation;
-                    },
-                }
-            }); 
+        self.world.act_on_components(&mut |component| {
+            match component {
+                Component::Model(_) => (),
+                Component::Transform(instance, _) => {
+                    instance.rotation = rotate_by * instance.rotation;
+                },
+            }
         });
-
-        self.renderer.update(&self.camera, &self.entities, dt);
-        
+        self.renderer.update(&self.camera, &self.world, dt);
     }
 }
 
@@ -247,7 +224,7 @@ fn main() {
                 let dt = now - last_render_time;
                 last_render_time = now;
                 state.update(dt);
-            match state.renderer.render(&state.entities) {
+            match state.renderer.render(&state.world) {
                 Ok(_) => {}
                 // Recreate the swap_chain if lost
                 Err(wgpu::SurfaceError::Lost) => state.renderer.resize(state.renderer.size),
