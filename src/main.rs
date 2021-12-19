@@ -5,9 +5,8 @@
 #![allow(clippy::cast_precision_loss)]
 use std::{rc::Rc};
 
-use camera::Projection;
 use cgmath::{Deg, InnerSpace, Quaternion, Rotation3, Zero};
-use ecs::World;
+use ecs::{World, Light};
 use winit::{
     event::{DeviceEvent, ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
@@ -49,7 +48,49 @@ impl State {
         let camera = camera::Camera::new((0.0, 5.0, 10.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0));
         let camera_controller = camera::Controller::new(4.0, 0.4);
         let renderer = renderer::Renderer::new(window, &camera).await;
-        
+
+        let light_transform = Transform {
+            position: cgmath::Vector3 { x: 2.0, y: 2.0, z: 2.0 },
+            rotation: cgmath::Quaternion::new(1.0, 0.0, 0.0, 0.0),
+        };
+        let light_transform_buffer = renderer.device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Light Transform Buffer"),
+                contents: bytemuck::cast_slice(&[light_transform.to_raw()]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            }
+        );
+
+        let light = Light {
+            color: [1.0, 1.0, 1.0],
+        };
+        let light_buffer = renderer.device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Light VB"),
+                contents: bytemuck::cast_slice(&[light]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            }
+        );
+
+        let light_bind_group = renderer.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &renderer.light_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: light_transform_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: light_buffer.as_entire_binding(),
+                },
+            ],
+            label: None,
+        });
+        let light_transform = Component::Transform(light_transform, light_transform_buffer);
+        let light = Component::Light(light, light_buffer, light_bind_group);
+        world.create_entity(vec![light_transform, light]);
+
+
 
         let res_dir = std::path::Path::new(env!("OUT_DIR")).join("resources");
         let cube_model = model::Model::load(
@@ -65,16 +106,15 @@ impl State {
             &renderer.texture_bind_group_layout,
             res_dir.join("floor.obj"),
         ).unwrap();
-
         
         // Floor
         let floor_model = Rc::new(floor_model);
         let component_model = Component::Model(floor_model.clone());
-        let instance = Transform {
+        let transform = Transform {
             position: cgmath::Vector3 { x: 0.0, y: 0.0, z: 0.0 }, 
             rotation: cgmath::Quaternion::new(1.0, 0.0, 0.0, 0.0),
         };
-        let instance_data = instance.to_raw();
+        let instance_data = transform.to_raw();
         let instance_buffer = renderer.device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Instance Buffer"),
@@ -82,7 +122,7 @@ impl State {
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             }
         );
-        let component_instances = Component::Transform(instance, instance_buffer);
+        let component_instances = Component::Transform(transform, instance_buffer);
         world.create_entity(vec![component_model, component_instances]); 
 
 
@@ -167,13 +207,13 @@ impl State {
         let rotate_by = Quaternion::from_angle_z(Deg(1.0));
         self.world.do_on_components(&mut |component| {
             match component {
-                Component::Model(_) => (),
+                Component::Model(_) | Component::Light(_, _, _) => (),
                 Component::Transform(instance, _) => {
                     instance.rotation = rotate_by * instance.rotation;
                 },
             }
         });
-        self.renderer.update(&self.camera, &self.world, dt);
+        self.renderer.update(&self.camera, &self.world);
     }
 }
 

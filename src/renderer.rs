@@ -1,28 +1,25 @@
 
 
 
-use std::rc::Rc;
-
-use cgmath::Rotation3;
-use wgpu::{util::DeviceExt, Device, SurfaceConfiguration};
+use wgpu::{util::DeviceExt, SurfaceConfiguration};
 use winit::{
     window::Window,
 };
 
 
-use crate::{model::{Vertex, self, DrawModel, Model}, util::{create_render_pipeline}, texture, camera::{self, Camera, Projection}, transform::{self, Transform}, ecs::{Component, Entity, World}};
+use crate::{model::{Vertex, self, DrawModel}, util::{create_render_pipeline}, texture, camera::{self, Camera, Projection}, transform, ecs::{Component, World}};
 
 use crate::uniforms::Uniforms;
 
 
-#[repr(C)]
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct LightUniform {
-    position: [f32; 3],
-    // Due to uniforms requiring 16 byte (4 float) spacing, we need to use a padding field here
-    _padding: u32,
-    color: [f32; 3],
-}
+// #[repr(C)]
+// #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+// struct LightUniform {
+//     position: [f32; 3],
+//     // Due to uniforms requiring 16 byte (4 float) spacing, we need to use a padding field here
+//     _padding: u32,
+//     color: [f32; 3],
+// }
 
 pub struct Renderer {
     surface: wgpu::Surface,
@@ -36,12 +33,9 @@ pub struct Renderer {
     pub texture_bind_group_layout: wgpu::BindGroupLayout,
     projection: Projection,
     uniforms: Uniforms,
-    uniform_buffer: wgpu::Buffer,
-    uniform_bind_group: wgpu::BindGroup,
-    light_uniform: LightUniform,
-    light_buffer: wgpu::Buffer,
-    _light_bind_group_layout: wgpu::BindGroupLayout,
-    light_bind_group: wgpu::BindGroup,
+    camera_buffer: wgpu::Buffer,
+    camera_bind_group: wgpu::BindGroup,
+    pub light_bind_group_layout: wgpu::BindGroupLayout,
     light_render_pipeline: wgpu::RenderPipeline,
     _debug_material: crate::model::Material,
 }
@@ -82,44 +76,35 @@ impl Renderer {
         };
         surface.configure(&device, &surface_config);
 
-        let light_uniform = LightUniform {
-            position: [2.0, 2.0, 2.0],
-            _padding: 0,
-            color: [1.0, 1.0, 1.0],
-        };
-        
-         // We'll want to update our lights position, so we use COPY_DST
-        let light_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Light VB"),
-                contents: bytemuck::cast_slice(&[light_uniform]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            }
-        );
 
         let light_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                }],
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
                 label: None,
             });
 
-        let light_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &light_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: light_buffer.as_entire_binding(),
-            }],
-            label: None,
-        });
+        
         
         let texture_bind_group_layout = device.create_bind_group_layout(
             &wgpu::BindGroupLayoutDescriptor {
@@ -176,12 +161,7 @@ impl Renderer {
         );
         
         let depth_texture = texture::Texture::create_depth_texture(&device, &surface_config, "depth_texture");
-
-
-        
         let projection = camera::Projection::new(surface_config.width, surface_config.height, cgmath::Deg(45.0), 0.1, 100.0);
-
-
 
         let mut uniforms = Uniforms::new();
         uniforms.update_view_proj(&camera, &projection);
@@ -288,12 +268,9 @@ impl Renderer {
             depth_texture,
             uniforms,
             texture_bind_group_layout,
-            uniform_buffer,
-            uniform_bind_group,
-            light_uniform,
-            light_buffer,
-            _light_bind_group_layout: light_bind_group_layout,
-            light_bind_group,
+            camera_buffer: uniform_buffer,
+            camera_bind_group: uniform_bind_group,
+            light_bind_group_layout,
             light_render_pipeline,
             _debug_material: debug_material,
             projection,
@@ -322,25 +299,8 @@ impl Renderer {
         });
 
 
-        let renderables = world.entities.iter().filter_map(|entity| -> Option<(&Rc<Model>, &Transform, &wgpu::Buffer)> {
-            let model = entity.components.iter().find_map(|component| match component {
-                Component::Model(model) => Some(model),
-                Component::Transform(_, _) => None,
-            });
-            let instance = entity.components.iter().find_map(|component| match component {
-                Component::Model(_) => None,
-                Component::Transform(instance, buffer) => Some((instance, buffer)),
-            });
-            
-            if let Some((transform, buffer)) = instance {
-                if let Some(model) = model {
-                    return Some((model, transform, buffer))
-                }
-            }
-            None
-            
-        }).collect::<Vec<_>>();
-
+        let renderables = world.find_renderables();
+        let (_, _, light_bind_group) = world.find_light();
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -379,7 +339,7 @@ impl Renderer {
             
             for (model, _, instance_buffer) in renderables {
                 render_pass.set_vertex_buffer(1, instance_buffer.slice(..));
-                render_pass.draw_model(model, &self.uniform_bind_group,  &self.light_bind_group);
+                render_pass.draw_model(model, &self.camera_bind_group,  light_bind_group);
             }
             // render_pass.draw_model_instanced(6
             //     &self.obj_model,
@@ -405,9 +365,9 @@ impl Renderer {
         Ok(())
     }
 
-    pub fn update(&mut self, camera: &Camera, world: &World, dt: std::time::Duration) {
+    pub fn update(&mut self, camera: &Camera, world: &World) {
         self.uniforms.update_view_proj(camera, &self.projection);
-        self.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[self.uniforms]));
+        self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[self.uniforms]));
 
         world.do_with_components(|component| {
             if let Component::Transform(instance, buffer) = component {
@@ -417,13 +377,6 @@ impl Renderer {
         });
 
 
-        // Light
-        // TODO: a light should not be a special thing, but rather a component?
-        let old_position: cgmath::Vector3<_> = self.light_uniform.position.into();
-        self.light_uniform.position =
-            (cgmath::Quaternion::from_axis_angle((0.0, 1.0, 0.0).into(), cgmath::Deg(60.0 * dt.as_secs_f32()))
-            * old_position).into();
-        self.queue.write_buffer(&self.light_buffer, 0, bytemuck::cast_slice(&[self.light_uniform]));
     }
 }
 
