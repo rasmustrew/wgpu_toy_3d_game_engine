@@ -34,6 +34,7 @@ impl World {
     }
 
     pub fn do_on_components<F>(&mut self, f: &mut F) where
+
     F: FnMut(&mut Component) -> () {
         self.entities.iter_mut().for_each(|entity|{
             entity.components.iter_mut().for_each(|component| {
