@@ -46,7 +46,7 @@ impl Renderer {
 
         // The instance is a handle to our GPU
         // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
-        let instance = wgpu::Instance::new(wgpu::Backends::all());
+        let instance = wgpu::Instance::new(wgpu::Backends::VULKAN);
         let surface = unsafe { instance.create_surface(window) };
 
         // Adapter is like PhysicalDevice in Vulkan
@@ -67,6 +67,7 @@ impl Renderer {
             None,
         ).await.unwrap();
 
+        dbg!(size);
         let surface_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface.get_preferred_format(&adapter).unwrap(),
@@ -74,6 +75,7 @@ impl Renderer {
             height: size.height,
             present_mode: wgpu::PresentMode::Fifo,
         };
+        dbg!(&surface_config);
         surface.configure(&device, &surface_config);
 
 
@@ -124,14 +126,7 @@ impl Renderer {
                     wgpu::BindGroupLayoutEntry {
                         binding: 1,
                         visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler {
-                            // This is only for TextureSampleType::Depth
-                            comparison: false,
-                            // This should be true if the sample_type of the texture is:
-                            //     TextureSampleType::Float { filterable: true }
-                            // Otherwise you'll get an error.
-                            filtering: true,
-                        },
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                         count: None,
                     },
                     // normal map texture
@@ -149,10 +144,7 @@ impl Renderer {
                     wgpu::BindGroupLayoutEntry {
                         binding: 3,
                         visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler { 
-                            comparison: false,
-                            filtering: true, 
-                        },
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                         count: None,
                     },
                 ],
@@ -213,9 +205,13 @@ impl Renderer {
         });
         
         let render_pipeline = {
-            let shader = wgpu::ShaderModuleDescriptor {
+            let vertex_shader = wgpu::ShaderModuleDescriptor {
                 label: Some("Normal Shader"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/uniform_buffer_instances_diffuse_specular_normalmap_shader.wgsl").into()),
+                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/wgpu_0.12/vertex_shader.wgsl").into()),
+            };
+            let fragment_shader = wgpu::ShaderModuleDescriptor {
+                label: Some("Normal Shader"),
+                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/wgpu_0.12/fragment_shader.wgsl").into()),
             };
             create_render_pipeline(
                 &device,
@@ -223,7 +219,9 @@ impl Renderer {
                 surface_config.format,
                 Some(texture::Texture::DEPTH_FORMAT),
                 &[model::ModelVertex::desc(), transform::Raw::desc()],
-                &shader,
+                &vertex_shader,
+                &fragment_shader,
+                "Render Pipeline",
             )
         };
 
@@ -233,9 +231,13 @@ impl Renderer {
                 bind_group_layouts: &[&uniform_bind_group_layout, &light_bind_group_layout],
                 push_constant_ranges: &[],
             });
-            let shader = wgpu::ShaderModuleDescriptor {
+            let shader_vertex = wgpu::ShaderModuleDescriptor {
                 label: Some("Light Shader"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/draw_light_box.wgsl").into()),
+                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/wgpu_0.12/vertex_shader_light_box.wgsl").into()),
+            };
+            let shader_fragment = wgpu::ShaderModuleDescriptor {
+                label: Some("Light Shader"),
+                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/wgpu_0.12/fragment_shader_light_box.wgsl").into()),
             };
             create_render_pipeline(
                 &device,
@@ -243,7 +245,9 @@ impl Renderer {
                 surface_config.format,
                 Some(texture::Texture::DEPTH_FORMAT),
                 &[model::ModelVertex::desc()],
-                &shader,
+                &shader_vertex,
+                &shader_fragment,
+                "Light Pipeline"
             )
         };
 
@@ -369,12 +373,12 @@ impl Renderer {
         self.uniforms.update_view_proj(camera, &self.projection);
         self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[self.uniforms]));
 
-        world.do_with_components(|component| {
-            if let Component::Transform(instance, buffer) = component {
-                let instance_data = instance.to_raw();
-                self.queue.write_buffer(&buffer, 0, bytemuck::cast_slice(&[instance_data]));
-            }
-        });
+        // world.do_with_components(|component| {
+        //     if let Component::Transform(instance, buffer) = component {
+        //         let instance_data = instance.to_raw();
+        //         self.queue.write_buffer(&buffer, 0, bytemuck::cast_slice(&[instance_data]));
+        //     }
+        // });
 
 
     }

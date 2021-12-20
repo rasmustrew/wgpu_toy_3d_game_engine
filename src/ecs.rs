@@ -24,6 +24,7 @@ pub enum Component {
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Light {
     pub color: [f32; 3],
+    pub _padding: f32,
 }
 
 

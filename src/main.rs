@@ -53,16 +53,19 @@ impl State {
             position: cgmath::Vector3 { x: 2.0, y: 2.0, z: 2.0 },
             rotation: cgmath::Quaternion::new(1.0, 0.0, 0.0, 0.0),
         };
+        let pos: [f32; 3] = light_transform.position.into();
+        let pos = [&pos[..], &[0.0]].concat();
         let light_transform_buffer = renderer.device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Light Transform Buffer"),
-                contents: bytemuck::cast_slice(&[light_transform.to_raw()]),
+                contents: bytemuck::cast_slice(&pos),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             }
         );
 
         let light = Light {
             color: [1.0, 1.0, 1.0],
+            _padding: 0.0,
         };
         let light_buffer = renderer.device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
