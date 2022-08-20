@@ -70,7 +70,7 @@ impl Renderer {
         dbg!(size);
         let surface_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: surface.get_preferred_format(&adapter).unwrap(),
+            format: surface.get_supported_formats(&adapter)[0],
             width: size.width,
             height: size.height,
             present_mode: wgpu::PresentMode::Fifo,
@@ -156,7 +156,7 @@ impl Renderer {
         let projection = camera::Projection::new(surface_config.width, surface_config.height, cgmath::Deg(45.0), 0.1, 100.0);
 
         let mut uniforms = Uniforms::new();
-        uniforms.update_view_proj(&camera, &projection);
+        uniforms.update_view_proj(camera, &projection);
         let uniform_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Uniform Buffer"),
@@ -206,12 +206,12 @@ impl Renderer {
         
         let render_pipeline = {
             let vertex_shader = wgpu::ShaderModuleDescriptor {
-                label: Some("Normal Shader"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/wgpu_0.12/vertex_shader.wgsl").into()),
+                label: Some("Normal Shader Vertex"),
+                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/wgpu_0.13/vertex_shader.wgsl").into()),
             };
             let fragment_shader = wgpu::ShaderModuleDescriptor {
-                label: Some("Normal Shader"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/wgpu_0.12/fragment_shader.wgsl").into()),
+                label: Some("Normal Shader Fragment"),
+                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/wgpu_0.13/fragment_shader.wgsl").into()),
             };
             create_render_pipeline(
                 &device,
@@ -219,8 +219,8 @@ impl Renderer {
                 surface_config.format,
                 Some(texture::Texture::DEPTH_FORMAT),
                 &[model::ModelVertex::desc(), transform::Raw::desc()],
-                &vertex_shader,
-                &fragment_shader,
+                vertex_shader,
+                fragment_shader,
                 "Render Pipeline",
             )
         };
@@ -232,12 +232,12 @@ impl Renderer {
                 push_constant_ranges: &[],
             });
             let shader_vertex = wgpu::ShaderModuleDescriptor {
-                label: Some("Light Shader"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/wgpu_0.12/vertex_shader_light_box.wgsl").into()),
+                label: Some("Light Shader Vertex"),
+                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/wgpu_0.13/vertex_shader_light_box.wgsl").into()),
             };
             let shader_fragment = wgpu::ShaderModuleDescriptor {
-                label: Some("Light Shader"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/wgpu_0.12/fragment_shader_light_box.wgsl").into()),
+                label: Some("Light Shader Fragment"),
+                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/wgpu_0.13/fragment_shader_light_box.wgsl").into()),
             };
             create_render_pipeline(
                 &device,
@@ -245,8 +245,8 @@ impl Renderer {
                 surface_config.format,
                 Some(texture::Texture::DEPTH_FORMAT),
                 &[model::ModelVertex::desc()],
-                &shader_vertex,
-                &shader_fragment,
+                shader_vertex,
+                shader_fragment,
                 "Light Pipeline"
             )
         };
@@ -310,14 +310,14 @@ impl Renderer {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[
-                    wgpu::RenderPassColorAttachment {
+                    Some(wgpu::RenderPassColorAttachment {
                         view: &view,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(self.clear_color),
                             store: true,
                         }
-                    }
+                    })
                 ],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &self.depth_texture.view,

@@ -1,38 +1,38 @@
 
 
 struct VertexOutput {
-    [[builtin(position)]] clip_position: vec4<f32>;
-    [[location(0)]] tex_coords: vec2<f32>;
-    [[location(1)]] tangent_position: vec3<f32>;
-    [[location(2)]] tangent_light_position: vec3<f32>;
-    [[location(3)]] tangent_view_position: vec3<f32>;
+    @builtin(position) clip_position: vec4<f32>,
+    @location(0) tex_coords: vec2<f32>,
+    @location(1) tangent_position: vec3<f32>,
+    @location(2) tangent_light_position: vec3<f32>,
+    @location(3) tangent_view_position: vec3<f32>,
     
 };
 
 struct LightPosition {
-    position: vec3<f32>;
+    position: vec3<f32>,
 };
 struct LightColor {
-    color: vec3<f32>;
+    color: vec3<f32>,
 };
-[[group(2), binding(0)]]
+@group(2) @binding(0)
 var<uniform> light_position: LightPosition;
-[[group(2), binding(1)]]
+@group(2) @binding(1)
 var<uniform> light_color: LightColor;
 
 
 // Fragment shader
-[[group(0), binding(0)]]
+@group(0) @binding(0)
 var t_diffuse: texture_2d<f32>;
-[[group(0), binding(1)]]
+@group(0) @binding(1)
 var s_diffuse: sampler;
-[[group(0), binding(2)]]
+@group(0) @binding(2)
 var t_normal: texture_2d<f32>;
-[[group(0), binding(3)]]
+@group(0) @binding(3)
 var s_normal: sampler;
 
-[[stage(fragment)]]
-fn main(in: VertexOutput) -> [[location(0)]] vec4<f32> {
+@fragment
+fn main(in: VertexOutput) -> @location(0) vec4<f32> {
     let object_color: vec4<f32> = textureSample(t_diffuse, s_diffuse, in.tex_coords);
     let object_normal: vec4<f32> = textureSample(t_normal, s_normal, in.tex_coords);
 

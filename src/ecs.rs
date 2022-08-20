@@ -47,7 +47,7 @@ impl World {
 
     pub fn do_on_components<F>(&mut self, f: &mut F) where
 
-    F: FnMut(&mut Component) -> () {
+    F: FnMut(&mut Component) {
         self.entities.iter_mut().for_each(|entity|{
             entity.components.iter_mut().for_each(|component| {
                 f(component)
@@ -56,7 +56,7 @@ impl World {
     }
 
     pub fn do_with_components<F>(&self, f: F) where
-    F: Fn(&Component) -> () {
+    F: Fn(&Component) {
         self.entities.iter().for_each(|entity|{
             entity.components.iter().for_each(|component| {
                 f(component)
