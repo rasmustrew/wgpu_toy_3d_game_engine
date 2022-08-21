@@ -21,7 +21,7 @@ pub struct Light {
 impl Light {
     pub fn new(position: cgmath::Vector3<f32>, color: [f32; 3], renderer: &Renderer) -> Self {
 
-        let raw = compute_raw(position, color);
+        let raw = Raw::new(position, color);
 
         let buffer = renderer.device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
@@ -51,7 +51,22 @@ impl Light {
     }
 
     pub fn to_raw(&self) -> Raw {
-        compute_raw(self.position, self.color)
+        Raw::new(self.position, self.color)
+    }
+
+    
+
+    
+}
+
+impl Raw {
+    fn new(position: cgmath::Vector3<f32>, color: [f32; 3]) -> Raw {
+        Raw {
+            position: position.into(),
+            _padding: 0,
+            color,
+            _padding2: 0,
+        }
     }
 
     pub fn create_bind_group_layout(device: &Device) -> wgpu::BindGroupLayout {
@@ -71,15 +86,5 @@ impl Light {
             label: None,
         })
     }
-
-    
 }
 
-fn compute_raw(position: cgmath::Vector3<f32>, color: [f32; 3]) -> Raw {
-    Raw {
-        position: position.into(),
-        _padding: 0,
-        color,
-        _padding2: 0,
-    }
-}

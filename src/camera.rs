@@ -1,7 +1,10 @@
 use cgmath::{InnerSpace, Matrix4, Point3, Rad, Vector3, perspective};
+use wgpu::{Device, util::DeviceExt};
 use winit::{event::{ElementState, MouseScrollDelta, VirtualKeyCode}, dpi::PhysicalPosition};
 use std::time::Duration;
 use std::f32::consts::FRAC_PI_2;
+
+use crate::renderer::Renderer;
 
 const SAFE_FRAC_PI_2: f32 = FRAC_PI_2 - 0.0001;
 #[derive(Debug)]
@@ -9,6 +12,12 @@ pub struct Camera {
     pub position: Point3<f32>,
     yaw: Rad<f32>,
     pitch: Rad<f32>,
+    aspect: f32,
+    fovy: Rad<f32>,
+    znear: f32,
+    zfar: f32,
+    pub buffer: wgpu::Buffer,
+    pub bind_group: wgpu::BindGroup,
 }
 
 impl Camera {
@@ -16,61 +25,122 @@ impl Camera {
         V: Into<Point3<f32>>,
         Y: Into<Rad<f32>>,
         P: Into<Rad<f32>>,
+        F: Into<Rad<f32>>,
     >(
         position: V,
         yaw: Y,
         pitch: P,
-    ) -> Self {
-        Self {
-            position: position.into(),
-            yaw: yaw.into(),
-            pitch: pitch.into(),
-        }
-    }
-
-    pub fn calc_matrix(&self) -> Matrix4<f32> {
-        Matrix4::look_to_rh(
-            self.position,
-            Vector3::new(
-                self.yaw.0.cos(),
-                self.pitch.0.sin(),
-                self.yaw.0.sin(),
-            ).normalize(),
-            Vector3::unit_y(),
-        )
-    }
-}
-
-pub struct Projection {
-    aspect: f32,
-    fovy: Rad<f32>,
-    znear: f32,
-    zfar: f32,
-}
-
-impl Projection {
-    pub fn new<F: Into<Rad<f32>>>(
-        width: u32,
-        height: u32,
         fovy: F,
         znear: f32,
         zfar: f32,
+        renderer: &Renderer,
     ) -> Self {
+        let width = renderer.surface_config.width;
+        let height = renderer.surface_config.height;
+        let aspect = width as f32 / height as f32;
+        let position = position.into();
+        let yaw = yaw.into();
+        let pitch = pitch.into();
+        let fovy = fovy.into();
+        let raw = Raw::new(position, yaw, pitch, fovy, znear, zfar, aspect);
+        
+        let buffer = renderer.device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Uniform Buffer"),
+                contents: bytemuck::cast_slice(&[raw]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            }
+        );
+
+        let bind_group = renderer.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &renderer.camera_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: buffer.as_entire_binding(),
+                }
+            ],
+            label: Some("uniform_bind_group"),
+        });
+        
         Self {
-            aspect: width as f32 / height as f32,
-            fovy: fovy.into(),
+            position,
+            yaw,
+            pitch,
+            aspect,
+            fovy,
             znear,
             zfar,
+            buffer,
+            bind_group,
         }
     }
 
-    pub fn resize(&mut self, width: u32, height: u32) {
-        self.aspect = width as f32 / height as f32;
+    pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+        self.aspect = new_size.width as f32 / new_size.height as f32;
     }
 
-    pub fn calc_matrix(&self) -> Matrix4<f32> {
-        OPENGL_TO_WGPU_MATRIX * perspective(self.fovy, self.aspect, self.znear, self.zfar)
+    pub fn to_raw(&self) -> Raw {
+        Raw::new(self.position, self.yaw, self.pitch, self.fovy, self.znear, self.zfar, self.aspect)
     }
+
+}
+
+#[repr(C)]
+// This is so we can store this in a buffer
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct Raw {
+    view_position: [f32; 4],
+    // We can't use cgmath with bytemuck directly so we'll have
+    // to convert the Matrix4 into a 4x4 f32 array
+    view_proj: [[f32; 4]; 4],
+}
+
+impl Raw {
+    pub fn new(
+        position: Point3<f32>,
+        yaw: Rad<f32>,
+        pitch: Rad<f32>,
+        fovy: Rad<f32>,
+        znear: f32,
+        zfar: f32,
+        aspect: f32,
+    ) -> Self {
+        let perspective = OPENGL_TO_WGPU_MATRIX * perspective(fovy, aspect, znear, zfar);
+        let orientation = Matrix4::look_to_rh(
+            position,
+            Vector3::new(
+                yaw.0.cos(),
+                pitch.0.sin(),
+                yaw.0.sin(),
+            ).normalize(),
+            Vector3::unit_y(),
+        );
+        let view_proj = (perspective * orientation).into();
+        Self {
+            view_position: position.to_homogeneous().into(),
+            view_proj,
+        }
+    }
+
+    pub fn create_bind_group_layout(device: &Device) -> wgpu::BindGroupLayout {
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }
+            ],
+            label: Some("uniform_bind_group_layout"),
+        })
+    }
+
 }
 
 #[derive(Debug)]

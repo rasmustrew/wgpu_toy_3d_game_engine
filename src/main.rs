@@ -8,7 +8,6 @@
 mod util;
 mod texture;
 mod camera;
-mod uniforms;
 mod model;
 mod transform;
 mod light;
@@ -48,9 +47,10 @@ impl State {
     #[allow(clippy::too_many_lines)]
     async fn new(window: &Window) -> Self {
         let mut world = World::default();
-        let camera = camera::Camera::new((0.0, 5.0, 10.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0));
+        
+        let renderer = renderer::Renderer::new(window).await;
+        let camera = camera::Camera::new((0.0, 5.0, 10.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0), cgmath::Deg(45.0), 0.1, 100.0, &renderer);
         let camera_controller = camera::Controller::new(4.0, 0.4);
-        let renderer = renderer::Renderer::new(window, &camera).await;
 
 
         let res_dir = std::path::Path::new(env!("OUT_DIR")).join("resources");
@@ -201,6 +201,7 @@ fn main() {
                 } => *control_flow = ControlFlow::Exit,
                 WindowEvent::Resized(physical_size) => {
                     state.renderer.resize(*physical_size);
+                    state.camera.resize(*physical_size);
                 }
                 WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
                     state.renderer.resize(**new_inner_size);
@@ -213,7 +214,7 @@ fn main() {
                 let dt = now - last_render_time;
                 last_render_time = now;
                 state.update(dt);
-            match state.renderer.render(&state.world) {
+            match state.renderer.render(&state.world, &state.camera) {
                 Ok(_) => {}
                 // Recreate the swap_chain if lost
                 Err(wgpu::SurfaceError::Lost) => state.renderer.resize(state.renderer.size),

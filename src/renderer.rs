@@ -10,14 +10,13 @@ use winit::{
 };
 
 
-use crate::{model::{Vertex, self, DrawModel, Model}, util::{create_render_pipeline}, texture::{self, Texture}, camera::{self, Camera, Projection}, transform::{self, Transform}, light::Light};
+use crate::{model::{Vertex, self, DrawModel, Model}, util::{create_render_pipeline}, texture::{self, Texture}, camera::{self, Camera}, transform::{self, Transform}, light::{Light, self}};
 
-use crate::uniforms::Uniforms;
 
 
 pub struct Renderer {
     surface: wgpu::Surface,
-    surface_config: SurfaceConfiguration,
+    pub surface_config: SurfaceConfiguration,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
     pub size: winit::dpi::PhysicalSize<u32>,
@@ -25,17 +24,14 @@ pub struct Renderer {
     render_pipeline:wgpu::RenderPipeline,
     depth_texture: texture::Texture,
     pub texture_bind_group_layout: wgpu::BindGroupLayout,
-    projection: Projection,
-    uniforms: Uniforms,
-    camera_buffer: wgpu::Buffer,
-    camera_bind_group: wgpu::BindGroup,
     pub light_bind_group_layout: wgpu::BindGroupLayout,
+    pub camera_bind_group_layout: wgpu:: BindGroupLayout,
     light_render_pipeline: wgpu::RenderPipeline,
     _debug_material: crate::model::Material,
 }
 
 impl Renderer {
-    pub async fn new(window: &Window, camera: &Camera) -> Self {
+    pub async fn new(window: &Window) -> Self {
         let size = window.inner_size();
 
         let instance = wgpu::Instance::new(wgpu::Backends::VULKAN);
@@ -68,32 +64,14 @@ impl Renderer {
         surface.configure(&device, &surface_config);
 
 
-        let light_bind_group_layout = Light::create_bind_group_layout(&device);
+        let light_bind_group_layout = light::Raw::create_bind_group_layout(&device);
         let texture_bind_group_layout = Texture::create_bind_group_layout(&device);
+        let camera_bind_group_layout = camera::Raw::create_bind_group_layout(&device);
         
         let depth_texture = texture::Texture::create_depth_texture(&device, &surface_config, "depth_texture");
-        let projection = camera::Projection::new(surface_config.width, surface_config.height, cgmath::Deg(45.0), 0.1, 100.0);
-
-        let mut uniforms = Uniforms::new();
-        uniforms.update_view_proj(camera, &projection);
-        let uniform_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Uniform Buffer"),
-                contents: bytemuck::cast_slice(&[uniforms]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            }
-        );
-        let uniform_bind_group_layout = Uniforms::create_bind_group_layout(&device);
-        let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &uniform_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: uniform_buffer.as_entire_binding(),
-                }
-            ],
-            label: Some("uniform_bind_group"),
-        });
+        
+        
+        
 
         let clear_color = wgpu::Color {
             r: 0.1,
@@ -105,7 +83,7 @@ impl Renderer {
         let render_pipeline_layout =
         device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Render Pipeline Layout"),
-            bind_group_layouts: &[&texture_bind_group_layout, &uniform_bind_group_layout, &light_bind_group_layout],
+            bind_group_layouts: &[&texture_bind_group_layout, &camera_bind_group_layout, &light_bind_group_layout],
             push_constant_ranges: &[],
         });
         
@@ -133,7 +111,7 @@ impl Renderer {
         let light_render_pipeline = {
             let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Light Pipeline Layout"),
-                bind_group_layouts: &[&uniform_bind_group_layout, &light_bind_group_layout],
+                bind_group_layouts: &[&camera_bind_group_layout, &light_bind_group_layout],
                 push_constant_ranges: &[],
             });
             let shader_vertex = wgpu::ShaderModuleDescriptor {
@@ -175,14 +153,11 @@ impl Renderer {
             clear_color,
             render_pipeline,
             depth_texture,
-            uniforms,
             texture_bind_group_layout,
-            camera_buffer: uniform_buffer,
-            camera_bind_group: uniform_bind_group,
+            camera_bind_group_layout,
             light_bind_group_layout,
             light_render_pipeline,
             _debug_material: debug_material,
-            projection,
         }
     }
 
@@ -194,11 +169,10 @@ impl Renderer {
             self.surface_config.height = new_size.height;
             self.surface.configure(&self.device, &self.surface_config);
             self.depth_texture = texture::Texture::create_depth_texture(&self.device, &self.surface_config, "depth_texture");
-            self.projection.resize(new_size.width, new_size.height);
         }
     }
 
-    pub fn render(&mut self, world: &World) -> Result<(), wgpu::SurfaceError> {
+    pub fn render(&mut self, world: &World, camera: &Camera) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
         
@@ -248,7 +222,7 @@ impl Renderer {
             
             for (transform, model) in renderables.iter(world) {
                 render_pass.set_vertex_buffer(1, transform.buffer.slice(..));
-                render_pass.draw_model(model, &self.camera_bind_group,  &light.bind_group);
+                render_pass.draw_model(model, &camera.bind_group,  &light.bind_group);
             }
         }
 
@@ -260,8 +234,8 @@ impl Renderer {
     }
 
     pub fn update(&mut self, camera: &Camera, world: &World) {
-        self.uniforms.update_view_proj(camera, &self.projection);
-        self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[self.uniforms]));
+        let camera_raw = camera.to_raw();
+        self.queue.write_buffer(&camera.buffer, 0, bytemuck::cast_slice(&[camera_raw]));
         let mut transforms = <&Transform>::query();
         for transform in transforms.iter(world) {
             self.queue.write_buffer(&transform.buffer, 0, bytemuck::cast_slice(&[transform.to_raw()]));
