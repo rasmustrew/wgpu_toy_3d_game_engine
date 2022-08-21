@@ -53,7 +53,7 @@ impl Camera {
         );
 
         let bind_group = renderer.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &renderer.camera_bind_group_layout,
+            layout: &Raw::create_bind_group_layout(&renderer.device),
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,

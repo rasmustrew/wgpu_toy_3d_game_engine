@@ -23,9 +23,6 @@ pub struct Renderer {
     clear_color: wgpu::Color,
     render_pipeline:wgpu::RenderPipeline,
     depth_texture: texture::Texture,
-    pub texture_bind_group_layout: wgpu::BindGroupLayout,
-    pub light_bind_group_layout: wgpu::BindGroupLayout,
-    pub camera_bind_group_layout: wgpu:: BindGroupLayout,
     light_render_pipeline: wgpu::RenderPipeline,
     _debug_material: crate::model::Material,
 }
@@ -33,7 +30,6 @@ pub struct Renderer {
 impl Renderer {
     pub async fn new(window: &Window) -> Self {
         let size = window.inner_size();
-
         let instance = wgpu::Instance::new(wgpu::Backends::VULKAN);
         let surface = unsafe { instance.create_surface(window) };
 
@@ -63,16 +59,12 @@ impl Renderer {
         };
         surface.configure(&device, &surface_config);
 
-
         let light_bind_group_layout = light::Raw::create_bind_group_layout(&device);
         let texture_bind_group_layout = Texture::create_bind_group_layout(&device);
         let camera_bind_group_layout = camera::Raw::create_bind_group_layout(&device);
         
         let depth_texture = texture::Texture::create_depth_texture(&device, &surface_config, "depth_texture");
         
-        
-        
-
         let clear_color = wgpu::Color {
             r: 0.1,
             g: 0.2,
@@ -137,10 +129,8 @@ impl Renderer {
         let debug_material = {
             let diffuse_bytes = include_bytes!("../resources/cobble-diffuse.png");
             let normal_bytes = include_bytes!("../resources/cobble-normal.png");
-        
             let diffuse_texture = texture::Texture::from_bytes(&device, &queue, diffuse_bytes, "resources/alt-diffuse.png", false).unwrap();
             let normal_texture = texture::Texture::from_bytes(&device, &queue, normal_bytes, "resources/alt-normal.png", true).unwrap();
-            
             model::Material::new(&device, "alt-material", diffuse_texture, normal_texture, &texture_bind_group_layout)
         };
 
@@ -153,9 +143,6 @@ impl Renderer {
             clear_color,
             render_pipeline,
             depth_texture,
-            texture_bind_group_layout,
-            camera_bind_group_layout,
-            light_bind_group_layout,
             light_render_pipeline,
             _debug_material: debug_material,
         }

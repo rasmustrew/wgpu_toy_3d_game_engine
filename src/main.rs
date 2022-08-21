@@ -20,6 +20,7 @@ use cgmath::{Deg, InnerSpace, Quaternion, Rotation3, Zero};
 use legion::World;
 use legion::IntoQuery;
 use light::Light;
+use texture::Texture;
 use winit::{
     event::{DeviceEvent, ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
@@ -58,7 +59,7 @@ impl State {
         let floor_model = model::Model::load(
             &renderer.device,
             &renderer.queue,
-            &renderer.texture_bind_group_layout,
+            &Texture::create_bind_group_layout(&renderer.device),
             res_dir.join("floor.obj"),
         ).unwrap();
         let floor_model = Arc::new(floor_model);
@@ -66,7 +67,7 @@ impl State {
         let cube_model = model::Model::load(
             &renderer.device,
             &renderer.queue,
-            &renderer.texture_bind_group_layout,
+            &Texture::create_bind_group_layout(&renderer.device),
             res_dir.join("cube.obj"),
         ).unwrap();
         let cube_model = Arc::new(cube_model);
