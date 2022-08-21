@@ -8,16 +8,13 @@ struct Camera {
 @group(0) @binding(0)
 var<uniform> camera: Camera;
 
-struct LightPosition {
+struct Light {
     position: vec3<f32>,
-};
-struct LightColor {
     color: vec3<f32>,
 };
+
 @group(1) @binding(0)
-var<uniform> light_position: LightPosition;
-@group(1) @binding(1)
-var<uniform> light_color: LightColor;
+var<uniform> light: Light;
 
 struct VertexInput {
     @location(0) position: vec3<f32>,
@@ -34,7 +31,7 @@ fn main(
 ) -> VertexOutput {
     let scale = 0.25;
     var out: VertexOutput;
-    out.clip_position = camera.view_proj * vec4<f32>(model.position * scale + light_position.position, 1.0);
-    out.color = light_color.color;
+    out.clip_position = camera.view_proj * vec4<f32>(model.position * scale + light.position, 1.0);
+    out.color = light.color;
     return out;
 }

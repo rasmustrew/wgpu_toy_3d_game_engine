@@ -20,16 +20,14 @@ struct Uniforms {
 @group(1) @binding(0)
 var<uniform> uniforms: Uniforms;
 
-struct LightPosition {
+struct Light {
     position: vec3<f32>,
-};
-struct LightColor {
     color: vec3<f32>,
 };
+
 @group(2) @binding(0)
-var<uniform> light_position: LightPosition;
-@group(2) @binding(1)
-var<uniform> light_color: LightColor;
+var<uniform> light: Light;
+
 
 
 struct VertexInput {
@@ -82,7 +80,7 @@ fn main(
     out.tex_coords = model.tex_coords;
     out.tangent_position = tangent_matrix * world_position.xyz;
     out.tangent_view_position = tangent_matrix * uniforms.view_pos.xyz;
-    out.tangent_light_position = tangent_matrix * light_position.position;
+    out.tangent_light_position = tangent_matrix * light.position;
     return out;
 }
 

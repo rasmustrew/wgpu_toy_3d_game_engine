@@ -1,18 +1,40 @@
-use crate::model;
+use wgpu::util::DeviceExt;
+
+use crate::{model, renderer::Renderer};
 
 pub struct Transform {
-    pub position: cgmath::Vector3<f32>,
-    pub rotation: cgmath::Quaternion<f32>,
+    position: cgmath::Vector3<f32>,
+    rotation: cgmath::Quaternion<f32>,
+    pub buffer: wgpu::Buffer,
 }
 
 impl Transform {
     pub fn to_raw(&self) -> Raw {
-        let model =
-            cgmath::Matrix4::from_translation(self.position) * cgmath::Matrix4::from(self.rotation);
-        Raw {
-            model: model.into(),
-            normal: cgmath::Matrix3::from(self.rotation).into(),
+        compute_raw(self.position, self.rotation)
+    }
+
+    pub fn new(position: cgmath::Vector3<f32>, rotation: cgmath::Quaternion<f32>, renderer: &Renderer) ->  Self {
+
+        let raw = compute_raw(position, rotation);
+        let buffer = renderer.device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Transform Buffer"),
+                contents: bytemuck::cast_slice(&[raw]),
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            }
+        );
+
+        Transform {
+            position,
+            rotation,
+            buffer,
         }
+    }
+
+    pub fn rotate_by(&mut self, rotation: cgmath::Quaternion<f32>) {
+        self.rotation = rotation * self.rotation;
+        // self.renderer.queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[self.to_raw()]));
+        
     }
 }
 
@@ -22,6 +44,15 @@ impl Transform {
 pub struct Raw {
     pub model: [[f32; 4]; 4],
     pub normal: [[f32; 3]; 3],
+}
+
+fn compute_raw(position: cgmath::Vector3<f32>, rotation: cgmath::Quaternion<f32>) -> Raw {
+    let model =
+        cgmath::Matrix4::from_translation(position) * cgmath::Matrix4::from(rotation);
+    Raw {
+        model: model.into(),
+        normal: cgmath::Matrix3::from(rotation).into(),
+    }
 }
 
 impl model::Vertex for Raw {

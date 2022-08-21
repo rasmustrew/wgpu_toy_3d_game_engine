@@ -1,25 +1,19 @@
 
 
 
+use std::sync::Arc;
+
+use legion::{World, query, IntoQuery};
 use wgpu::{util::DeviceExt, SurfaceConfiguration};
 use winit::{
     window::Window,
 };
 
 
-use crate::{model::{Vertex, self, DrawModel}, util::{create_render_pipeline}, texture, camera::{self, Camera, Projection}, transform, ecs::{Component, World}};
+use crate::{model::{Vertex, self, DrawModel, Model}, util::{create_render_pipeline}, texture, camera::{self, Camera, Projection}, transform::{self, Transform}, light::{self, Light}};
 
 use crate::uniforms::Uniforms;
 
-
-// #[repr(C)]
-// #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-// struct LightUniform {
-//     position: [f32; 3],
-//     // Due to uniforms requiring 16 byte (4 float) spacing, we need to use a padding field here
-//     _padding: u32,
-//     color: [f32; 3],
-// }
 
 pub struct Renderer {
     surface: wgpu::Surface,
@@ -84,16 +78,6 @@ impl Renderer {
                 entries: &[
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
-                        visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
                         visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Uniform,
@@ -302,9 +286,9 @@ impl Renderer {
             label: Some("Render Encoder"),
         });
 
-
-        let renderables = world.find_renderables();
-        let (_, _, light_bind_group) = world.find_light();
+        let mut renderables = <(&Transform, &Arc<Model>)>::query();
+        let mut lights = <&Light>::query();
+        let light = lights.iter(world).next().unwrap();
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -341,25 +325,10 @@ impl Renderer {
             render_pass.set_pipeline(&self.render_pipeline);
             
             
-            for (model, _, instance_buffer) in renderables {
-                render_pass.set_vertex_buffer(1, instance_buffer.slice(..));
-                render_pass.draw_model(model, &self.camera_bind_group,  light_bind_group);
+            for (transform, model) in renderables.iter(world) {
+                render_pass.set_vertex_buffer(1, transform.buffer.slice(..));
+                render_pass.draw_model(model, &self.camera_bind_group,  &light.bind_group);
             }
-            // render_pass.draw_model_instanced(6
-            //     &self.obj_model,
-            //     0..self.instances.len() as u32,
-            //     &self.uniform_bind_group,
-            //     &self.light_bind_group,
-            // );
-
-            //debug
-            // render_pass.draw_model_instanced_with_material(
-            //     &self.obj_model,
-            //     &self.debug_material,
-            //     0..self.instances.len() as u32,
-            //     &self.uniform_bind_group,
-            //     &self.light_bind_group,
-            // );
         }
 
         // Finish giving commands, and submit command buffer to queue.
@@ -372,15 +341,16 @@ impl Renderer {
     pub fn update(&mut self, camera: &Camera, world: &World) {
         self.uniforms.update_view_proj(camera, &self.projection);
         self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[self.uniforms]));
-
-        // world.do_with_components(|component| {
-        //     if let Component::Transform(instance, buffer) = component {
-        //         let instance_data = instance.to_raw();
-        //         self.queue.write_buffer(&buffer, 0, bytemuck::cast_slice(&[instance_data]));
-        //     }
-        // });
-
+        let mut transforms = <&Transform>::query();
+        for transform in transforms.iter(world) {
+            self.queue.write_buffer(&transform.buffer, 0, bytemuck::cast_slice(&[transform.to_raw()]));
+        }
 
     }
 }
+
+
+
+
+
 

@@ -3,17 +3,7 @@
 #![warn(clippy::cargo)]
 #![warn(clippy::nursery)]
 #![allow(clippy::cast_precision_loss)]
-use std::{rc::Rc};
 
-use cgmath::{Deg, InnerSpace, Quaternion, Rotation3, Zero};
-use ecs::{World, Light};
-use winit::{
-    event::{DeviceEvent, ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent},
-    event_loop::{ControlFlow, EventLoop},
-    window::WindowBuilder,
-    window::Window,
-};
-use wgpu::{util::DeviceExt};
 
 mod util;
 mod texture;
@@ -21,12 +11,25 @@ mod camera;
 mod uniforms;
 mod model;
 mod transform;
-mod ecs;
+mod light;
 mod renderer;
+
+
+use std::sync::Arc;
+
+use cgmath::{Deg, InnerSpace, Quaternion, Rotation3, Zero};
+use legion::World;
+use legion::IntoQuery;
+use light::Light;
+use winit::{
+    event::{DeviceEvent, ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent},
+    event_loop::{ControlFlow, EventLoop},
+    window::WindowBuilder,
+    window::Window,
+};
+use camera::Camera;
+use transform::Transform;
 use model::{Model};
-use crate::camera::Camera;
-use crate::transform::Transform;
-use crate::ecs::Component;
 
 const NUM_INSTANCES_PER_ROW: u16 = 10;
 const SPACE_BETWEEN: f32 = 3.0;
@@ -35,7 +38,7 @@ struct State {
     mouse_pressed: bool,
     camera: Camera,
     camera_controller: camera::Controller,
-    _models: Vec<Rc<Model>>,
+    models: Vec<Arc<Model>>,
     world: World,
     renderer: renderer::Renderer,
 }
@@ -44,95 +47,57 @@ impl State {
     // Creating some of the wgpu types requires async code
     #[allow(clippy::too_many_lines)]
     async fn new(window: &Window) -> Self {
-        let mut world = World::new();
+        let mut world = World::default();
         let camera = camera::Camera::new((0.0, 5.0, 10.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0));
         let camera_controller = camera::Controller::new(4.0, 0.4);
         let renderer = renderer::Renderer::new(window, &camera).await;
 
-        let light_transform = Transform {
-            position: cgmath::Vector3 { x: 2.0, y: 2.0, z: 2.0 },
-            rotation: cgmath::Quaternion::new(1.0, 0.0, 0.0, 0.0),
-        };
-        let pos: [f32; 3] = light_transform.position.into();
-        let pos = [&pos[..], &[0.0]].concat();
-        let light_transform_buffer = renderer.device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Light Transform Buffer"),
-                contents: bytemuck::cast_slice(&pos),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            }
-        );
-
-        let light = Light {
-            color: [1.0, 1.0, 1.0],
-            _padding: 0.0,
-        };
-        let light_buffer = renderer.device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Light VB"),
-                contents: bytemuck::cast_slice(&[light]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            }
-        );
-
-        let light_bind_group = renderer.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &renderer.light_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: light_transform_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: light_buffer.as_entire_binding(),
-                },
-            ],
-            label: None,
-        });
-        let light_transform = Component::Transform(light_transform, light_transform_buffer);
-        let light = Component::Light(light, light_buffer, light_bind_group);
-        world.create_entity(vec![light_transform, light]);
-
-
 
         let res_dir = std::path::Path::new(env!("OUT_DIR")).join("resources");
-        let cube_model = model::Model::load(
-            &renderer.device,
-            &renderer.queue,
-            &renderer.texture_bind_group_layout,
-            res_dir.join("cube.obj"),
-        ).unwrap(); 
-
+        
         let floor_model = model::Model::load(
             &renderer.device,
             &renderer.queue,
             &renderer.texture_bind_group_layout,
             res_dir.join("floor.obj"),
         ).unwrap();
+        let floor_model = Arc::new(floor_model);
+
+        let cube_model = model::Model::load(
+            &renderer.device,
+            &renderer.queue,
+            &renderer.texture_bind_group_layout,
+            res_dir.join("cube.obj"),
+        ).unwrap();
+        let cube_model = Arc::new(cube_model);
         
-        // Floor
-        let floor_model = Rc::new(floor_model);
-        let component_model = Component::Model(floor_model.clone());
-        let transform = Transform {
-            position: cgmath::Vector3 { x: 0.0, y: 0.0, z: 0.0 }, 
-            rotation: cgmath::Quaternion::new(1.0, 0.0, 0.0, 0.0),
-        };
-        let instance_data = transform.to_raw();
-        let instance_buffer = renderer.device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Instance Buffer"),
-                contents: bytemuck::cast_slice(&[instance_data]),
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            }
-        );
-        let component_instances = Component::Transform(transform, instance_buffer);
-        world.create_entity(vec![component_model, component_instances]); 
 
+        Self {
+            mouse_pressed: false,
+            models: vec![floor_model, cube_model],
+            world,
+            camera,
+            camera_controller,
+            renderer,
+        }
+    }
 
-        // Cubes
-        let cube_model = Rc::new(cube_model);
-        (0..NUM_INSTANCES_PER_ROW).flat_map(|z| {
-            (0..NUM_INSTANCES_PER_ROW).map(move |x| {
+    fn populate_world(&mut self) {
+
+        let position = cgmath::Vector3 { x: 2.0, y: 2.0, z: 2.0 };
+        let color = [1.0, 1.0, 1.0];
+        let light = Light::new(position, color, &self.renderer); 
+        self.world.push((light, ()));
+
+        let position = cgmath::Vector3 { x: 0.0, y: 0.0, z: 0.0 };
+        let rotation = cgmath::Quaternion::new(1.0, 0.0, 0.0, 0.0);
+        let transform = Transform::new(position, rotation, &self.renderer);
+        let floor_model = self.models[0].clone();
+        self.world.push((transform, floor_model));
+
+        
+        (0..NUM_INSTANCES_PER_ROW).for_each(|z| {
+            (0..NUM_INSTANCES_PER_ROW).for_each(|x| {
                 let x = SPACE_BETWEEN * (f32::from(x) - f32::from(NUM_INSTANCES_PER_ROW) / 2.0);
                 let z = SPACE_BETWEEN * (f32::from(z) - f32::from(NUM_INSTANCES_PER_ROW) / 2.0);
 
@@ -144,32 +109,13 @@ impl State {
                     cgmath::Quaternion::from_axis_angle(position.normalize(), cgmath::Deg(45.0))
                 };
 
-                Transform {
-                    position, rotation,
-                }
-            })
-        }).for_each(|instance: Transform| {
-            let component_model = Component::Model(cube_model.clone());
-            let instance_data = instance.to_raw();
-            let instance_buffer = renderer.device.create_buffer_init(
-                &wgpu::util::BufferInitDescriptor {
-                    label: Some("Instance Buffer"),
-                    contents: bytemuck::cast_slice(&[instance_data]),
-                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                }
-            );
-            let component_instances = Component::Transform(instance, instance_buffer);
-            world.create_entity(vec![component_model, component_instances]);
+                let cube_model = self.models[1].clone();
+                let transform = Transform::new(position, rotation, &self.renderer);
+                self.world.push((transform, cube_model));
+                
+            });
         });
-
-        Self {
-            mouse_pressed: false,
-            _models: vec![cube_model, floor_model],
-            world,
-            camera,
-            camera_controller,
-            renderer,
-        }
+        dbg!("done populating world");
     }
 
     // Handle events, return true if want to capture that event so it does not get handled further
@@ -208,15 +154,14 @@ impl State {
         self.camera_controller.update_camera(&mut self.camera, dt);
         // Models
         let rotate_by = Quaternion::from_angle_z(Deg(1.0));
-        self.world.do_on_components(&mut |component| {
-            match component {
-                Component::Model(_) | Component::Light(_, _, _) => (),
-                Component::Transform(instance, _) => {
-                    instance.rotation = rotate_by * instance.rotation;
-                },
-            }
-        });
+
+        let mut transforms = <&mut Transform>::query();
+        for transform in transforms.iter_mut(&mut self.world) {
+            transform.rotate_by(rotate_by);
+        }
+
         self.renderer.update(&self.camera, &self.world);
+
     }
 }
 
@@ -229,6 +174,7 @@ fn main() {
     let window = WindowBuilder::new().build(&event_loop).unwrap();
 
     let mut state = pollster::block_on(State::new(&window));
+    state.populate_world();
     let mut last_render_time = std::time::Instant::now();
 
     event_loop.run(move |event, _, control_flow| match event {

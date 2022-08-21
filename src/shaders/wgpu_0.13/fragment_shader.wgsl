@@ -9,16 +9,13 @@ struct VertexOutput {
     
 };
 
-struct LightPosition {
+struct Light {
     position: vec3<f32>,
-};
-struct LightColor {
     color: vec3<f32>,
 };
 @group(2) @binding(0)
-var<uniform> light_position: LightPosition;
-@group(2) @binding(1)
-var<uniform> light_color: LightColor;
+var<uniform> light: Light;
+
 
 
 // Fragment shader
@@ -38,7 +35,7 @@ fn main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // We don't need (or want) much ambient light, so 0.1 is fine
     let ambient_strength = 0.1;
-    let ambient_color = light_color.color * ambient_strength;
+    let ambient_color = light.color * ambient_strength;
 
     // Create the lighting vectors
     let tangent_normal = object_normal.xyz * 2.0 - 1.0;
@@ -47,12 +44,12 @@ fn main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // Diffuse
     let diffuse_strength = max(dot(tangent_normal, light_dir), 0.0);
-    let diffuse_color = light_color.color * diffuse_strength;
+    let diffuse_color = light.color * diffuse_strength;
 
     // Specular
     let half_dir = normalize(view_dir + light_dir);
     let specular_strength = pow(max(dot(tangent_normal, half_dir), 0.0), 32.0);
-    let specular_color = specular_strength * light_color.color;
+    let specular_color = specular_strength * light.color;
 
     let result = (ambient_color + diffuse_color + specular_color) * object_color.xyz;
 
