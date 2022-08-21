@@ -1,10 +1,10 @@
-use wgpu::util::DeviceExt;
+use wgpu::{util::DeviceExt, Device};
 
 use crate::{transform::Transform, renderer::Renderer};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct Raw {
+pub struct Raw {
     pub position: [f32; 3],
     pub _padding: u32,
     pub color: [f32; 3],
@@ -53,6 +53,26 @@ impl Light {
     pub fn to_raw(&self) -> Raw {
         compute_raw(self.position, self.color)
     }
+
+    pub fn create_bind_group_layout(device: &Device) -> wgpu::BindGroupLayout {
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+            label: None,
+        })
+    }
+
+    
 }
 
 fn compute_raw(position: cgmath::Vector3<f32>, color: [f32; 3]) -> Raw {
