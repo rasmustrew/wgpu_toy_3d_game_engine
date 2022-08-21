@@ -24,7 +24,7 @@ impl Transform {
             }
         );
 
-        Transform {
+        Self {
             position,
             rotation,
             buffer,
@@ -59,7 +59,7 @@ impl model::Vertex for Raw {
     fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
         use std::mem;
         wgpu::VertexBufferLayout {
-            array_stride: mem::size_of::<Raw>() as wgpu::BufferAddress,
+            array_stride: mem::size_of::<Self>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Instance,
             attributes: &[
                 //Position

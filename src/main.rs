@@ -4,8 +4,6 @@
 #![warn(clippy::nursery)]
 #![allow(clippy::cast_precision_loss)]
 
-
-mod util;
 mod texture;
 mod camera;
 mod model;
@@ -44,10 +42,8 @@ struct State {
 }
 
 impl State {
-    // Creating some of the wgpu types requires async code
-    #[allow(clippy::too_many_lines)]
     async fn new(window: &Window) -> Self {
-        let mut world = World::default();
+        let world = World::default();
         
         let renderer = renderer::Renderer::new(window).await;
         let camera = camera::Camera::new((0.0, 5.0, 10.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0), cgmath::Deg(45.0), 0.1, 100.0, &renderer);

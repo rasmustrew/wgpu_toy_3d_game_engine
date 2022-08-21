@@ -2,16 +2,12 @@
 
 
 use std::sync::Arc;
-
-use legion::{World, query, IntoQuery};
-use wgpu::{util::DeviceExt, SurfaceConfiguration};
+use legion::{World, IntoQuery};
+use wgpu::SurfaceConfiguration;
 use winit::{
     window::Window,
 };
-
-
-use crate::{model::{Vertex, self, DrawModel, Model}, util::{create_render_pipeline}, texture::{self, Texture}, camera::{self, Camera}, transform::{self, Transform}, light::{Light, self}};
-
+use crate::{model::{Vertex, self, Draw, Model}, texture::{self, Texture}, camera::{self, Camera}, transform::{self, Transform}, light::{Light, self}};
 
 
 pub struct Renderer {
@@ -58,28 +54,20 @@ impl Renderer {
             present_mode: wgpu::PresentMode::Fifo,
         };
         surface.configure(&device, &surface_config);
+        
+        let depth_texture = texture::Texture::create_depth_texture(&device, &surface_config, "depth_texture");
+        let clear_color = wgpu::Color { r: 0.1, g: 0.2, b: 0.3, a: 1.0 };
 
         let light_bind_group_layout = light::Raw::create_bind_group_layout(&device);
         let texture_bind_group_layout = Texture::create_bind_group_layout(&device);
         let camera_bind_group_layout = camera::Raw::create_bind_group_layout(&device);
         
-        let depth_texture = texture::Texture::create_depth_texture(&device, &surface_config, "depth_texture");
-        
-        let clear_color = wgpu::Color {
-            r: 0.1,
-            g: 0.2,
-            b: 0.3,
-            a: 1.0,
-        };
-
-        let render_pipeline_layout =
-        device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Render Pipeline Layout"),
-            bind_group_layouts: &[&texture_bind_group_layout, &camera_bind_group_layout, &light_bind_group_layout],
-            push_constant_ranges: &[],
-        });
-        
         let render_pipeline = {
+            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Render Pipeline Layout"),
+                bind_group_layouts: &[&texture_bind_group_layout, &camera_bind_group_layout, &light_bind_group_layout],
+                push_constant_ranges: &[],
+            });
             let vertex_shader = wgpu::ShaderModuleDescriptor {
                 label: Some("Normal Shader Vertex"),
                 source: wgpu::ShaderSource::Wgsl(include_str!("shaders/wgpu_0.13/vertex_shader.wgsl").into()),
@@ -90,9 +78,8 @@ impl Renderer {
             };
             create_render_pipeline(
                 &device,
-                &render_pipeline_layout,
-                surface_config.format,
-                Some(texture::Texture::DEPTH_FORMAT),
+                &layout,
+                (surface_config.format, Some(texture::Texture::DEPTH_FORMAT)),
                 &[model::ModelVertex::desc(), transform::Raw::desc()],
                 vertex_shader,
                 fragment_shader,
@@ -100,31 +87,7 @@ impl Renderer {
             )
         };
 
-        let light_render_pipeline = {
-            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Light Pipeline Layout"),
-                bind_group_layouts: &[&camera_bind_group_layout, &light_bind_group_layout],
-                push_constant_ranges: &[],
-            });
-            let shader_vertex = wgpu::ShaderModuleDescriptor {
-                label: Some("Light Shader Vertex"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/wgpu_0.13/vertex_shader_light_box.wgsl").into()),
-            };
-            let shader_fragment = wgpu::ShaderModuleDescriptor {
-                label: Some("Light Shader Fragment"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/wgpu_0.13/fragment_shader_light_box.wgsl").into()),
-            };
-            create_render_pipeline(
-                &device,
-                &layout,
-                surface_config.format,
-                Some(texture::Texture::DEPTH_FORMAT),
-                &[model::ModelVertex::desc()],
-                shader_vertex,
-                shader_fragment,
-                "Light Pipeline"
-            )
-        };
+        let light_render_pipeline = create_light_render_pipeline(&device, &camera_bind_group_layout, &light_bind_group_layout, &surface_config);
 
         let debug_material = {
             let diffuse_bytes = include_bytes!("../resources/cobble-diffuse.png");
@@ -231,6 +194,94 @@ impl Renderer {
     }
 }
 
+fn create_light_render_pipeline(device: &wgpu::Device, camera_bind_group_layout: &wgpu::BindGroupLayout, light_bind_group_layout: &wgpu::BindGroupLayout, surface_config: &SurfaceConfiguration) -> wgpu::RenderPipeline {
+    let light_render_pipeline = {
+        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Light Pipeline Layout"),
+            bind_group_layouts: &[camera_bind_group_layout, light_bind_group_layout],
+            push_constant_ranges: &[],
+        });
+        let shader_vertex = wgpu::ShaderModuleDescriptor {
+            label: Some("Light Shader Vertex"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/wgpu_0.13/vertex_shader_light_box.wgsl").into()),
+        };
+        let shader_fragment = wgpu::ShaderModuleDescriptor {
+            label: Some("Light Shader Fragment"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/wgpu_0.13/fragment_shader_light_box.wgsl").into()),
+        };
+        create_render_pipeline(
+            device,
+            &layout,
+            (surface_config.format, Some(texture::Texture::DEPTH_FORMAT)),
+            &[model::ModelVertex::desc()],
+            shader_vertex,
+            shader_fragment,
+            "Light Pipeline"
+        )
+    };
+    light_render_pipeline
+}
+
+
+pub fn create_render_pipeline(
+    device: &wgpu::Device,
+    layout: &wgpu::PipelineLayout,
+    format: (wgpu::TextureFormat, Option<wgpu::TextureFormat>),
+    vertex_layouts: &[wgpu::VertexBufferLayout],
+    vertex_shader: wgpu::ShaderModuleDescriptor,
+    fragment_shader: wgpu::ShaderModuleDescriptor,
+    label: &str,
+) -> wgpu::RenderPipeline {
+    let vertex_shader = device.create_shader_module(vertex_shader);
+    let fragment_shader = device.create_shader_module(fragment_shader);
+
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some(label),
+        layout: Some(layout),
+        vertex: wgpu::VertexState {
+            module: &vertex_shader,
+            entry_point: "main",
+            buffers: vertex_layouts,
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &fragment_shader,
+            entry_point: "main",
+            targets: &[Some(wgpu::ColorTargetState {
+                format: format.0,
+                blend: Some(wgpu::BlendState {
+                    alpha: wgpu::BlendComponent::REPLACE,
+                    color: wgpu::BlendComponent::REPLACE,
+                }),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            strip_index_format: None,
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode: Some(wgpu::Face::Back),
+            // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
+            polygon_mode: wgpu::PolygonMode::Fill,
+            // Requires Features::CONSERVATIVE_RASTERIZATION
+            conservative: false,
+            // Requires Features::DEPTH_CLAMPING
+            unclipped_depth: false,
+        },
+        depth_stencil: format.1.map(|format| wgpu::DepthStencilState {
+            format,
+            depth_write_enabled: true,
+            depth_compare: wgpu::CompareFunction::Less,
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
+        }),
+        multisample: wgpu::MultisampleState {
+            count: 1,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
+        multiview: None,
+    })
+}
 
 
 

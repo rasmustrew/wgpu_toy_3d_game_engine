@@ -159,7 +159,7 @@ pub struct Controller {
 }
 
 impl Controller {
-    pub fn new(speed: f32, sensitivity: f32) -> Self {
+    pub const fn new(speed: f32, sensitivity: f32) -> Self {
         Self {
             amount_left: 0.0,
             amount_right: 0.0,

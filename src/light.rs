@@ -1,6 +1,6 @@
 use wgpu::{util::DeviceExt, Device};
 
-use crate::{transform::Transform, renderer::Renderer};
+use crate::{renderer::Renderer};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -42,7 +42,7 @@ impl Light {
             label: None,
         });
 
-        Light {
+        Self {
             position,
             color, 
             buffer,
@@ -60,8 +60,8 @@ impl Light {
 }
 
 impl Raw {
-    fn new(position: cgmath::Vector3<f32>, color: [f32; 3]) -> Raw {
-        Raw {
+    fn new(position: cgmath::Vector3<f32>, color: [f32; 3]) -> Self {
+        Self {
             position: position.into(),
             _padding: 0,
             color,
