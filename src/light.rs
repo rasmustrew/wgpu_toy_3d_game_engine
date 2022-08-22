@@ -12,9 +12,9 @@ pub struct Raw {
 }
 
 pub struct Light {
-    position: cgmath::Vector3<f32>,
+    pub position: cgmath::Vector3<f32>,
     color: [f32; 3],
-    buffer: wgpu::Buffer,
+    pub buffer: wgpu::Buffer,
     pub bind_group: wgpu::BindGroup,
 }
 
@@ -84,7 +84,9 @@ impl Raw {
                 },
             ],
             label: None,
+        
         })
     }
+
 }
 

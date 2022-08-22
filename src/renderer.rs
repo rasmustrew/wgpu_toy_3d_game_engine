@@ -7,7 +7,7 @@ use wgpu::SurfaceConfiguration;
 use winit::{
     window::Window,
 };
-use crate::{model::{Vertex, self, Draw, Model}, texture::{self, Texture}, camera::{self, Camera}, transform::{self, Transform}, light::{Light, self}};
+use crate::{model::{Vertex, self, Draw, Model, DrawLight}, texture::{self, Texture}, camera::{self, Camera}, transform::{self, Transform}, light::{Light, self}};
 
 
 pub struct Renderer {
@@ -132,8 +132,8 @@ impl Renderer {
         });
 
         let mut renderables = <(&Transform, &Arc<Model>)>::query();
-        let mut lights = <&Light>::query();
-        let light = lights.iter(world).next().unwrap();
+        let mut lights = <(&Light, &Arc<Model>)>::query();
+        let (light, light_model) = lights.iter(world).next().unwrap();
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -161,11 +161,11 @@ impl Renderer {
             
 
             render_pass.set_pipeline(&self.light_render_pipeline); // NEW!
-            // render_pass.draw_light_model(
-            //     &self.obj_model,
-            //     &self.uniform_bind_group,
-            //     &self.light_bind_group,
-            // );
+            render_pass.draw_light_model(
+                light_model,
+                &camera.bind_group,
+                &light.bind_group,
+            );
 
             render_pass.set_pipeline(&self.render_pipeline);
             
@@ -186,6 +186,13 @@ impl Renderer {
     pub fn update(&mut self, camera: &Camera, world: &World) {
         let camera_raw = camera.to_raw();
         self.queue.write_buffer(&camera.buffer, 0, bytemuck::cast_slice(&[camera_raw]));
+
+        let mut lights = <&Light>::query();
+        for light in lights.iter(world) {
+            let light_raw = light.to_raw();
+            self.queue.write_buffer(&light.buffer, 0, bytemuck::cast_slice(&[light_raw]));
+        }
+
         let mut transforms = <&Transform>::query();
         for transform in transforms.iter(world) {
             self.queue.write_buffer(&transform.buffer, 0, bytemuck::cast_slice(&[transform.to_raw()]));

@@ -81,10 +81,11 @@ impl State {
 
     fn populate_world(&mut self) {
 
-        let position = cgmath::Vector3 { x: 2.0, y: 2.0, z: 2.0 };
+        let position = cgmath::Vector3 { x: 5.0, y: 5.0, z: 5.0 };
         let color = [1.0, 1.0, 1.0];
         let light = Light::new(position, color, &self.renderer); 
-        self.world.push((light, ()));
+        let light_debug_model = self.models[1].clone();
+        self.world.push((light, light_debug_model));
 
         let position = cgmath::Vector3 { x: 0.0, y: 0.0, z: 0.0 };
         let rotation = cgmath::Quaternion::new(1.0, 0.0, 0.0, 0.0);
@@ -156,6 +157,12 @@ impl State {
         for transform in transforms.iter_mut(&mut self.world) {
             transform.rotate_by(rotate_by);
         }
+
+        let mut lights = <&mut Light>::query();
+        for light in lights.iter_mut(&mut self.world) {
+            light.position = cgmath::Quaternion::from_axis_angle((0.0, 1.0, 0.0).into(), cgmath::Deg(1.0)) * light.position;
+        }
+        
 
         self.renderer.update(&self.camera, &self.world);
 

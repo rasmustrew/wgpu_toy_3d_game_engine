@@ -33,8 +33,6 @@ impl Transform {
 
     pub fn rotate_by(&mut self, rotation: cgmath::Quaternion<f32>) {
         self.rotation = rotation * self.rotation;
-        // self.renderer.queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[self.to_raw()]));
-        
     }
 }
 
