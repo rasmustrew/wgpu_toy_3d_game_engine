@@ -44,8 +44,12 @@ struct State {
 impl State {
     async fn new(window: &Window) -> Self {
         let world = World::default();
+        let position = cgmath::Vector3 { x: 5.0, y: 5.0, z: 5.0 };
+        let color = [1.0, 1.0, 1.0];
+        let light = Light::new(position, color); 
         
-        let renderer = renderer::Renderer::new(window).await;
+        
+        let renderer = renderer::Renderer::new(window, &light).await;
         let camera = camera::Camera::new((0.0, 5.0, 10.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0), cgmath::Deg(45.0), 0.1, 100.0, &renderer);
         let camera_controller = camera::Controller::new(4.0, 0.4);
 
@@ -81,11 +85,15 @@ impl State {
 
     fn populate_world(&mut self) {
 
-        let position = cgmath::Vector3 { x: 5.0, y: 5.0, z: 5.0 };
-        let color = [1.0, 1.0, 1.0];
-        let light = Light::new(position, color, &self.renderer); 
-        let light_debug_model = self.models[1].clone();
-        self.world.push((light, light_debug_model));
+        let position = cgmath::Vector3 { x: -5.0, y: 5.0, z: 5.0 };
+        let color = [1.0, 0.0, 0.0];
+        let light = Light::new(position, color); 
+        self.world.push((light, ()));
+
+        let position = cgmath::Vector3 { x: 2.0, y: 2.0, z: 2.0 };
+        let color = [0.0, 0.0, 1.0];
+        let light = Light::new(position, color); 
+        self.world.push((light, ()));
 
         let position = cgmath::Vector3 { x: 0.0, y: 0.0, z: 0.0 };
         let rotation = cgmath::Quaternion::new(1.0, 0.0, 0.0, 0.0);

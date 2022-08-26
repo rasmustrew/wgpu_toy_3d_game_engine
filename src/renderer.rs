@@ -1,9 +1,10 @@
 
 
 
+use core::num;
 use std::sync::Arc;
 use legion::{World, IntoQuery};
-use wgpu::SurfaceConfiguration;
+use wgpu::{SurfaceConfiguration, util::DeviceExt, BufferDescriptor};
 use winit::{
     window::Window,
 };
@@ -20,11 +21,14 @@ pub struct Renderer {
     render_pipeline:wgpu::RenderPipeline,
     depth_texture: texture::Texture,
     light_render_pipeline: wgpu::RenderPipeline,
-    _debug_material: crate::model::Material,
+    _debug_light_model: Model,
+    light_buffer: wgpu::Buffer,
+    light_bind_group: wgpu::BindGroup,
+    num_lights: usize,
 }
 
 impl Renderer {
-    pub async fn new(window: &Window) -> Self {
+    pub async fn new(window: &Window, init_light: &Light) -> Self {
         let size = window.inner_size();
         let instance = wgpu::Instance::new(wgpu::Backends::VULKAN);
         let surface = unsafe { instance.create_surface(window) };
@@ -62,6 +66,27 @@ impl Renderer {
         let texture_bind_group_layout = Texture::create_bind_group_layout(&device);
         let camera_bind_group_layout = camera::Raw::create_bind_group_layout(&device);
         
+
+        let light_buffer = device.create_buffer(
+            &wgpu::BufferDescriptor {
+                size: 1,
+                label: Some("Light VB"),
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            }
+        );
+
+        let light_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &light::Raw::create_bind_group_layout(&device),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: light_buffer.as_entire_binding(),
+                },
+            ],
+            label: None,
+        });
+        
         let render_pipeline = {
             let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
@@ -89,13 +114,16 @@ impl Renderer {
 
         let light_render_pipeline = create_light_render_pipeline(&device, &camera_bind_group_layout, &light_bind_group_layout, &surface_config);
 
-        let debug_material = {
-            let diffuse_bytes = include_bytes!("../resources/cobble-diffuse.png");
-            let normal_bytes = include_bytes!("../resources/cobble-normal.png");
-            let diffuse_texture = texture::Texture::from_bytes(&device, &queue, diffuse_bytes, "resources/alt-diffuse.png", false).unwrap();
-            let normal_texture = texture::Texture::from_bytes(&device, &queue, normal_bytes, "resources/alt-normal.png", true).unwrap();
-            model::Material::new(&device, "alt-material", diffuse_texture, normal_texture, &texture_bind_group_layout)
-        };
+
+        let res_dir = std::path::Path::new(env!("OUT_DIR")).join("resources");
+
+        let _debug_light_model = model::Model::load(
+            &device,
+            &queue,
+            &Texture::create_bind_group_layout(&device),
+            res_dir.join("cube.obj"),
+        ).unwrap();
+
 
         Self {
             surface,
@@ -107,7 +135,10 @@ impl Renderer {
             render_pipeline,
             depth_texture,
             light_render_pipeline,
-            _debug_material: debug_material,
+            light_buffer,
+            light_bind_group,
+            num_lights: 0,
+            _debug_light_model,
         }
     }
 
@@ -122,6 +153,30 @@ impl Renderer {
         }
     }
 
+    pub fn update_lights(&mut self, lights: &Vec<light::Raw>) {
+        let new_buffer= self.device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Light VB"),
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                contents: bytemuck::cast_slice(lights),
+            }
+        );
+        let new_bind_group =  self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &light::Raw::create_bind_group_layout(&self.device),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: new_buffer.as_entire_binding(),
+                },
+            ],
+            label: None,
+        });
+        self.num_lights = lights.len();
+        self.light_buffer = new_buffer;
+        self.light_bind_group = new_bind_group;
+
+    }
+
     pub fn render(&mut self, world: &World, camera: &Camera) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -130,10 +185,6 @@ impl Renderer {
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Render Encoder"),
         });
-
-        let mut renderables = <(&Transform, &Arc<Model>)>::query();
-        let mut lights = <(&Light, &Arc<Model>)>::query();
-        let (light, light_model) = lights.iter(world).next().unwrap();
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -159,20 +210,22 @@ impl Renderer {
             });
 
             
-
-            render_pass.set_pipeline(&self.light_render_pipeline); // NEW!
-            render_pass.draw_light_model(
-                light_model,
+            let num_lights = <&Light>::query().iter(world).count() as u32;
+            
+            render_pass.set_pipeline(&self.light_render_pipeline);
+            render_pass.draw_light_model_instanced(
+                &self._debug_light_model,
+                0..num_lights,
                 &camera.bind_group,
-                &light.bind_group,
+                &self.light_bind_group,
             );
-
+            
+            
+            let mut renderables = <(&Transform, &Arc<Model>)>::query();
             render_pass.set_pipeline(&self.render_pipeline);
-            
-            
             for (transform, model) in renderables.iter(world) {
                 render_pass.set_vertex_buffer(1, transform.buffer.slice(..));
-                render_pass.draw_model(model, &camera.bind_group,  &light.bind_group);
+                render_pass.draw_model(model, &camera.bind_group,  &self.light_bind_group);
             }
         }
 
@@ -187,11 +240,16 @@ impl Renderer {
         let camera_raw = camera.to_raw();
         self.queue.write_buffer(&camera.buffer, 0, bytemuck::cast_slice(&[camera_raw]));
 
-        let mut lights = <&Light>::query();
-        for light in lights.iter(world) {
-            let light_raw = light.to_raw();
-            self.queue.write_buffer(&light.buffer, 0, bytemuck::cast_slice(&[light_raw]));
+        let lights_raw: Vec<light::Raw> = <&Light>::query().iter(world).map(|light| {
+            light.to_raw()
+        }).collect();
+        if lights_raw.len() == self.num_lights {
+            self.queue.write_buffer(&self.light_buffer, 0, bytemuck::cast_slice(&lights_raw));
+            
+        } else {
+            self.update_lights(&lights_raw);
         }
+        
 
         let mut transforms = <&Transform>::query();
         for transform in transforms.iter(world) {

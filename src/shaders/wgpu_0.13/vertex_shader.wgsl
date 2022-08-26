@@ -24,9 +24,11 @@ struct Light {
     position: vec3<f32>,
     color: vec3<f32>,
 };
-
+struct Lights {
+    lights: array<Light>
+}
 @group(2) @binding(0)
-var<uniform> light: Light;
+var<storage, read> lights: Lights;
 
 
 
@@ -42,8 +44,10 @@ struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) tex_coords: vec2<f32>,
     @location(1) tangent_position: vec3<f32>,
-    @location(2) tangent_light_position: vec3<f32>,
-    @location(3) tangent_view_position: vec3<f32>,
+    @location(2) tangent_view_position: vec3<f32>,
+    @location(3) tangent_matrix_1: vec3<f32>,
+    @location(4) tangent_matrix_2: vec3<f32>,
+    @location(5) tangent_matrix_3: vec3<f32>,
     
 };
 
@@ -80,7 +84,10 @@ fn main(
     out.tex_coords = model.tex_coords;
     out.tangent_position = tangent_matrix * world_position.xyz;
     out.tangent_view_position = tangent_matrix * uniforms.view_pos.xyz;
-    out.tangent_light_position = tangent_matrix * light.position;
+    //out.tangent_light_position = tangent_matrix * lights.lights[0].position;
+    out.tangent_matrix_1 = tangent_matrix[0];
+    out.tangent_matrix_1 = tangent_matrix[1];
+    out.tangent_matrix_1 = tangent_matrix[2];
     return out;
 }
 
