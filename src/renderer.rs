@@ -1,13 +1,7 @@
-
-
-
-use core::num;
 use std::sync::Arc;
 use legion::{World, IntoQuery};
-use wgpu::{SurfaceConfiguration, util::DeviceExt, BufferDescriptor};
-use winit::{
-    window::Window,
-};
+use wgpu::{SurfaceConfiguration, util::DeviceExt};
+use winit::window::Window;
 use crate::{model::{Vertex, self, Draw, Model, DrawLight}, texture::{self, Texture}, camera::{self, Camera}, transform::{self, Transform}, light::{Light, self}};
 
 
@@ -28,10 +22,13 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub async fn new(window: &Window, init_light: &Light) -> Self {
+    pub async fn new(window: &Window, _init_light: &Light) -> Self {
         let size = window.inner_size();
-        let instance = wgpu::Instance::new(wgpu::Backends::VULKAN);
-        let surface = unsafe { instance.create_surface(window) };
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::VULKAN,
+            dx12_shader_compiler: Default::default(),
+        });
+        let surface = unsafe { instance.create_surface(window) }.unwrap();
 
         let adapter = instance.request_adapter(
             &wgpu::RequestAdapterOptions {
@@ -50,12 +47,23 @@ impl Renderer {
             None,
         ).await.unwrap();
 
+        let surface_caps = surface.get_capabilities(&adapter);
+        // Shader code in this tutorial assumes an Srgb surface texture. Using a different
+        // one will result all the colors comming out darker. If you want to support non
+        // Srgb surfaces, you'll need to account for that when drawing to the frame.
+        let surface_format = surface_caps.formats.iter()
+            .copied()
+            .filter(|f| f.is_srgb())
+            .next()
+            .unwrap_or(surface_caps.formats[0]);
         let surface_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: surface.get_supported_formats(&adapter)[0],
+            format: surface_format,
             width: size.width,
             height: size.height,
             present_mode: wgpu::PresentMode::Fifo,
+            alpha_mode: wgpu::CompositeAlphaMode::Auto,
+            view_formats: vec![]
         };
         surface.configure(&device, &surface_config);
         

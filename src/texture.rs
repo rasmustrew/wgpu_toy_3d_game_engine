@@ -64,6 +64,7 @@ impl Texture {
                 } else {
                     wgpu::TextureFormat::Rgba8UnormSrgb
                 },
+                view_formats: &[wgpu::TextureFormat::Rgba8Unorm, wgpu::TextureFormat::Rgba8UnormSrgb],
                 usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             }
         );
@@ -78,8 +79,8 @@ impl Texture {
             &rgba,
             wgpu::ImageDataLayout {
                 offset: 0,
-                bytes_per_row: std::num::NonZeroU32::new(4 * dimensions.0),
-                rows_per_image: std::num::NonZeroU32::new(dimensions.1),
+                bytes_per_row: Some(4 * dimensions.0),
+                rows_per_image: Some(dimensions.1),
             },
             size,
         );
@@ -113,6 +114,7 @@ impl Texture {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: Self::DEPTH_FORMAT,
+            view_formats: &[Self::DEPTH_FORMAT],
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT // 3.
                 | wgpu::TextureUsages::TEXTURE_BINDING,
         };
@@ -127,7 +129,7 @@ impl Texture {
                 mag_filter: wgpu::FilterMode::Linear,
                 min_filter: wgpu::FilterMode::Linear,
                 mipmap_filter: wgpu::FilterMode::Nearest,
-                lod_min_clamp: -100.0, // 5.
+                lod_min_clamp: 0.0, // 5.
                 lod_max_clamp: 100.0,
                 compare: Some(wgpu::CompareFunction::LessEqual),
                 ..wgpu::SamplerDescriptor::default()

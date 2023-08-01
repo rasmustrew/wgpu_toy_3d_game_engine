@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use cgmath::InnerSpace;
 use std::{ops::Range, path::Path};
-use wgpu::{util::DeviceExt};
+use wgpu::util::DeviceExt;
 
 use tobj::LoadOptions;
 use wgpu::BindGroup;
@@ -199,7 +199,7 @@ impl Model {
             // Average the tangents/bitangents
             for (i, n) in triangles_included.into_iter().enumerate() {
                 let denom = 1.0 / n as f32;
-                let mut v = &mut vertices[i];
+                let v = &mut vertices[i];
                 v.tangent = (cgmath::Vector3::from(v.tangent) * denom)
                     .normalize()
                     .into();

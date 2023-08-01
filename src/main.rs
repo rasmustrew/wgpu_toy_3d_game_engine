@@ -27,7 +27,7 @@ use winit::{
 };
 use camera::Camera;
 use transform::Transform;
-use model::{Model};
+use model::Model;
 
 const NUM_INSTANCES_PER_ROW: u16 = 10;
 const SPACE_BETWEEN: f32 = 3.0;
